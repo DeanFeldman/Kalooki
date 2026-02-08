@@ -1,0 +1,49 @@
+body {
+  font-family: Arial, sans-serif;
+  text-align: center;
+  background: #2e8b57;
+  color: white;
+}
+
+h1 {
+  margin-top: 20px;
+}
+
+.hand {
+  margin: 10px 0;
+}
+.card {
+  display: inline-block;  
+  padding: 10px 15px;
+  margin: 5px;
+  border: 1px solid black;
+  border-radius: 8px;
+  background: white;
+  color: black;
+  cursor: pointer;
+  min-width: 40px;         
+  text-align: center;      
+}
+
+.card:hover {
+  transform: translateY(-5px);
+  border: 2px solid yellow;
+}
+
+.selected {
+  border: 2px solid red !important;
+}
+
+.buttons {
+  margin: 15px 0;
+}
+
+#discardPile {
+  margin-top: 20px;
+  font-weight: bold;
+  color: #ffeb3b;
+}
+
+#hands p.player {
+  margin-bottom: 20px; 
+}

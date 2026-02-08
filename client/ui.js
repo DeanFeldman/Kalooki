@@ -1,67 +1,285 @@
+import { cardToDisplay } from "../shared/card.js";
 import { GameState } from "../shared/gamestate.js";
+import { ROUND_RULES } from "../shared/rules.js";
 
-const game = new GameState(["Dean", "Ricci"]);
-game.startRound();
+let game = new GameState(["Player1", "Player2", "Player3", "Player4"]);
+
 
 const handsP = document.getElementById("hands");
 const drawBtn = document.getElementById("drawButton");
 const discardBtn = document.getElementById("discardButton");
 const turnP = document.getElementById("turn");
+const startRoundBtn = document.getElementById("startRoundButton");
+const pickDiscardBtn = document.getElementById("pickDiscardButton");
+const resetBtn = document.getElementById("resetButton");
 
 let selectedCardIndex = null;
+let selectedCardIndices = []; 
+
+const playerElements = [
+  document.getElementById("player1"),
+  document.getElementById("player2"),
+  document.getElementById("player3"),
+  document.getElementById("player4")
+];
 
 function renderHands() {
-    handsP.innerHTML = ""; 
+    game.players.forEach((player, i) => {
+        const playerP = playerElements[i];
+        playerP.innerHTML = "";
 
-    game.players.forEach(player => {
-        const playerP = document.createElement("p"); 
-        playerP.className = "player";
-
+        // Player name
         const nameSpan = document.createElement("span");
-        nameSpan.textContent = player.name + (game.getCurrP() === player ? " ← Your Turn" : "") + ": ";
+        nameSpan.textContent = player.name + (i === game.currentPlayerIndex ? " ← Your Turn" : "") + ": ";
         playerP.appendChild(nameSpan);
 
+        // Player hand
         player.hand.forEach((card, index) => {
             const cardSpan = document.createElement("span");
-            cardSpan.textContent = card.toString();
+            cardSpan.textContent = cardToDisplay(card);
             cardSpan.className = "card";
+            if (card.suit === "Hearts" || card.suit === "Diamonds") cardSpan.classList.add("red");
+            if (index === selectedCardIndex) cardSpan.classList.add("selected");
 
-            if(index === selectedCardIndex) cardSpan.classList.add("selected");
+           
+            if (i === game.currentPlayerIndex) {
+                cardSpan.addEventListener("click", () => {
+                    selectedCardIndex = index;
 
-            cardSpan.addEventListener("click", () => {
-                selectedCardIndex = index;
-                renderHands();
-            });
+                    const idx = selectedCardIndices.indexOf(index);
+                    if (idx > -1) {
+                        selectedCardIndices.splice(idx, 1);
+                    } else {
+                        selectedCardIndices.push(index);
+                    }
+
+                    renderHands();
+                });
+            }
+
+
+            if (selectedCardIndices.includes(index)) {
+                cardSpan.classList.add("selected");
+            }
+
 
             playerP.appendChild(cardSpan);
         });
 
-        handsP.appendChild(playerP);
+
+        // Player melds (on table)
+        if (player.melds.length > 0) {
+            const meldDiv = document.createElement("div");
+            meldDiv.textContent = "Melds: ";
+
+            player.melds.forEach(meld => {
+                const meldSpan = document.createElement("span");
+                meldSpan.textContent = "[" + meld.map(cardToDisplay).join(" ") + "]";
+                meldSpan.style.marginRight = "8px";
+                meldDiv.appendChild(meldSpan);
+            });
+
+            playerP.appendChild(document.createElement("br"));
+            playerP.appendChild(meldDiv);
+        }
+
+
+        // Come Down button for current player
+        if (i === game.currentPlayerIndex) {
+            const comeDownBtn = document.createElement("button");
+            comeDownBtn.textContent = "Come Down";
+            comeDownBtn.addEventListener("click", () => {
+                if (selectedCardIndices.length === 0) { 
+                    alert("Select cards to come down!");
+                    return;
+                }
+                const success = game.layDownMeld(selectedCardIndices);
+                if (success) {
+                    alert("Meld laid down!");
+                    selectedCardIndices = [];
+                    renderHands();
+                } else {
+                    alert("Invalid meld.");
+                }
+            });
+            playerP.appendChild(document.createElement("br"));
+            playerP.appendChild(comeDownBtn);
+        }
+
+
+        // Buy Top Discard button for other players
+        if (i !== game.currentPlayerIndex) {
+            playerP.appendChild(document.createElement("br"));
+
+            const buyBtn = document.createElement("button");
+            buyBtn.textContent = "Buy Top Discard";
+            buyBtn.disabled = !(game.topDiscardBuyable && i !== game.currentPlayerIndex);
+            buyBtn.addEventListener("click", () => {
+                buyTopDiscardForPlayer(i);
+            });
+
+            playerP.appendChild(buyBtn);
+        }
+
+
     });
 
-    const discardTop = game.discardPile.length ? game.discardPile[game.discardPile.length - 1].toString() : "empty";
-    const discardP = document.createElement("p");
-    discardP.textContent = "Discard pile: " + discardTop;
-    discardP.style.fontWeight = "bold";
-    handsP.appendChild(discardP);
+    // Discard pile
+    const discardP = document.getElementById("discardPile");
+    discardP.innerHTML = "Discard pile: ";
+    if (game.discardPile.length > 0) {
+        const topCard = game.discardPile[game.discardPile.length - 1];
+        const cardSpan = document.createElement("span");
+        cardSpan.textContent = cardToDisplay(topCard);
+        cardSpan.className = "card";
+        if (topCard.suit === "Hearts" || topCard.suit === "Diamonds") cardSpan.style.color = "red";
+        discardP.appendChild(cardSpan);
+    }
 
-    turnP.textContent = "Current turn: " + game.getCurrP().name;
+    turnP.textContent = `Current turn: ${game.getCurrP().name}`;
+
+    const roundTextP = document.getElementById("roundText");
+    if(roundTextP){
+        roundTextP.textContent = game.roundStarted
+            ? "Current Game Mode: " + ROUND_RULES[game.currentRound].join(", ")
+            : "Current Game Mode: Not started";
+    }
 }
 
-renderHands();
 
-drawBtn.addEventListener("click", () => {
-    game.drawfromDeck();
-    renderHands();
-});
 
-discardBtn.addEventListener("click", () => {
-    if(selectedCardIndex !== null){
-        game.discardCard(selectedCardIndex);
-        game.nextPlayer();
+function attemptComeDown(playerIndex) {
+    const player = game.players[playerIndex];
+    
+    if (selectedCardIndex === null) {
+        alert("Select card(s) to lay down as a meld.");
+        return;
+    }
+
+    const cardIndices = [selectedCardIndex]; 
+    const success = game.layDownMeld(cardIndices);
+
+    if (success) {
+        alert("Meld laid down successfully!");
         selectedCardIndex = null;
         renderHands();
     } else {
-        alert("Select a card to discard first!");
+        alert("Invalid meld! Check the rules for this round.");
     }
+}
+
+
+
+function buyDiscardForPlayer(playerIndex) {
+  if (game.currentPlayerIndex === playerIndex) {
+    alert("It's already your turn! Use Draw instead.");
+    return;
+  }
+
+  const result = game.buyDiscardOutOfTurn(playerIndex);
+  if (result) {
+    alert(`${game.players[playerIndex].name} bought ${cardToDisplay(result.boughtCard)} and drew a penalty card!`);
+    renderHands();
+  } else {
+    alert("Cannot buy discard!");
+  }
+}
+
+function buyTopDiscardForPlayer(playerIndex) {
+    const player = game.players[playerIndex];
+
+    
+    if (!game.topDiscardBuyable) {
+        alert("Cannot buy the discard yet!");
+        return;
+    }
+
+    if (playerIndex === game.currentPlayerIndex) {
+        alert("It's your turn! Draw instead.");
+        return;
+    }
+
+    if (game.discardPile.length === 0){
+        return;
+    }
+
+    const topCard = game.discardPile.pop();
+    player.hand.push(topCard);
+
+    const extraCard = game.deck.draw();
+    if (extraCard){
+        player.hand.push(extraCard);
+    }
+
+    game.topDiscardBuyable = false; 
+
+    renderHands();
+}
+
+drawBtn.addEventListener("click", () => {
+  if (game.hasDrawn) {
+    alert("You can only draw once per turn!");
+    return;
+  }
+  game.drawFromDeck();
+  renderHands();
 });
+
+pickDiscardBtn.addEventListener("click", () => {
+  const currIndex = game.currentPlayerIndex;
+  if (game.hasDrawn) {
+    alert("You can only draw once per turn!");
+    return;
+  }
+
+  const boughtCard = game.buyDiscard(currIndex);
+  if (boughtCard) {
+    renderHands();
+  } else {
+    alert("Cannot buy the discard pile!");
+  }
+});
+
+
+discardBtn.addEventListener("click", () => {
+  if (selectedCardIndex === null) {
+    alert("Select a card to discard first!");
+    return;
+  }
+
+  
+    const success = game.discardCard(selectedCardIndex);
+    if (!success) {
+        alert("You must come down before discarding.");
+        return;
+    }
+    selectedCardIndex = null;
+    selectedCardIndices = [];
+
+
+  
+    game.nextP();
+    renderHands();
+});
+
+startRoundBtn.addEventListener("click", () => {
+  game.startRound();
+  startRoundBtn.disabled = true;
+  drawBtn.disabled = false;
+  pickDiscardBtn.disabled = false;
+  discardBtn.disabled = false;
+  renderHands();
+});
+
+resetBtn.addEventListener("click", () => {
+  game = new GameState(["Player1", "Player2", "Player3", "Player4"]);
+  game.deck.shuffle();
+  selectedCardIndex = null;
+  startRoundBtn.disabled = false;
+  drawBtn.disabled = true;
+  pickDiscardBtn.disabled = true;
+  discardBtn.disabled = true;
+  renderHands();
+});
+
+renderHands();

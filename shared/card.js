@@ -39,3 +39,18 @@ export class card{
     }
 
 }
+
+export function cardToDisplay(card) {
+    if(card.isJoker){
+        return "JOKER";
+    }
+
+    let suitSymbols = {
+        "Hearts": "♥",
+        "Diamonds": "♦",
+        "Clubs": "♣",
+        "Spades": "♠"
+    };
+
+    return card.rank + suitSymbols[card.suit];
+}

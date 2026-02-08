@@ -1,15 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <title>Kalooki</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h1>Kalooki Visualizer</h1>
 
-  <p id="hands">Hands will appear here</p>
+  <header>
+    <h1> Lets Play Kalooki!</h1>
+    <p id="roundText">Current Game Mode: </p>
 
-  <button id="drawButton">Draw Card</button>
-  <button id="discardButton">Discard Card</button>
+    <p class="buttons">
+      <button id="startRoundButton">Start Round</button>
+      <button id="drawButton">Draw from Deck</button>
+      <button id="pickDiscardButton">Pick Up Top Discard</button>
+      <button id="discardButton">Discard Card</button>
+      <button id="resetButton">Reset Game</button>
+    </p>
+
+    
+  </header>
+
+  <section id="piles">
+    <p id="discardPile">Discard pile: empty</p>
+  </section>
+
+  <footer id="players">
+    <p id="player1" class="playerColumn"></p>
+    <p id="player2" class="playerColumn"></p>
+    <p id="player3" class="playerColumn"></p>
+    <p id="player4" class="playerColumn"></p>
+  </footer>
 
   <p id="turn">Current turn: </p>
 

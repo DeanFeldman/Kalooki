@@ -16,6 +16,10 @@ const resetBtn = document.getElementById("resetButton");
 let selectedCardIndex = null;
 let selectedCardIndices = []; 
 
+let draggedCardIndex = null;
+let draggedFromPlayerIndex = null;
+
+
 const playerElements = [
   document.getElementById("player1"),
   document.getElementById("player2"),
@@ -30,41 +34,68 @@ function renderHands() {
 
         // Player name
         const nameSpan = document.createElement("span");
-        nameSpan.textContent = player.name + (i === game.currentPlayerIndex ? " ← Your Turn" : "") + ": ";
+        //nameSpan.textContent = player.name + (i === game.currentPlayerIndex ? " ← Your Turn" : "") + ": ";
         playerP.appendChild(nameSpan);
 
         // Player hand
         player.hand.forEach((card, index) => {
-            const cardSpan = document.createElement("span");
-            cardSpan.textContent = cardToDisplay(card);
-            cardSpan.className = "card";
-            if (card.suit === "Hearts" || card.suit === "Diamonds") cardSpan.classList.add("red");
-            if (index === selectedCardIndex) cardSpan.classList.add("selected");
+        const cardSpan = document.createElement("span");
+        cardSpan.textContent = cardToDisplay(card);
+        cardSpan.className = "card";
+        if (card.suit === "Hearts" || card.suit === "Diamonds"){
+            cardSpan.classList.add("red");
+        }
+        if (selectedCardIndices.includes(index)){
+            cardSpan.classList.add("selected");
+        }
 
-           
-            if (i === game.currentPlayerIndex) {
-                cardSpan.addEventListener("click", () => {
-                    selectedCardIndex = index;
+        if (i === game.currentPlayerIndex) {
+            
+            cardSpan.addEventListener("click", () => {
+                const idx = selectedCardIndices.indexOf(index);
+                if (idx > -1){
+                    selectedCardIndices.splice(idx, 1);
+                }
+                else{
+                    selectedCardIndices.push(index);
+                }
+                renderHands();
+            });
 
-                    const idx = selectedCardIndices.indexOf(index);
-                    if (idx > -1) {
-                        selectedCardIndices.splice(idx, 1);
-                    } else {
-                        selectedCardIndices.push(index);
-                    }
+            
+            cardSpan.draggable = true;
+            cardSpan.addEventListener("dragstart", () => {
+                draggedCardIndex = index;
+                draggedFromPlayerIndex = i;
+            });
 
-                    renderHands();
-                });
-            }
+            
+            cardSpan.addEventListener("dragover", (e) => {
+                e.preventDefault(); 
+            });
 
+            // Drop to reorder
+            cardSpan.addEventListener("drop", () => {
+                if (draggedCardIndex === null || draggedFromPlayerIndex !== i){
+                    return;
+                }
 
-            if (selectedCardIndices.includes(index)) {
-                cardSpan.classList.add("selected");
-            }
+                const hand = player.hand;
+                const draggedCard = hand[draggedCardIndex];
 
+                hand.splice(draggedCardIndex, 1);
 
-            playerP.appendChild(cardSpan);
-        });
+                hand.splice(index, 0, draggedCard);
+
+                draggedCardIndex = null;
+                draggedFromPlayerIndex = null;
+
+                renderHands();
+            });
+        }
+
+        playerP.appendChild(cardSpan);
+    });
 
 
         // Player melds (on table)
@@ -88,11 +119,18 @@ function renderHands() {
         if (i === game.currentPlayerIndex) {
             const comeDownBtn = document.createElement("button");
             comeDownBtn.textContent = "Come Down";
+            
             comeDownBtn.addEventListener("click", () => {
                 if (selectedCardIndices.length === 0) { 
                     alert("Select cards to come down!");
                     return;
                 }
+
+                if (!game.canComeDown()) {
+                    alert("You cannot come down yet! Use all cards first (Blitz rule).");
+                    return;
+                }
+
                 const success = game.layDownMeld(selectedCardIndices);
                 if (success) {
                     alert("Meld laid down!");
@@ -102,6 +140,7 @@ function renderHands() {
                     alert("Invalid meld.");
                 }
             });
+
             playerP.appendChild(document.createElement("br"));
             playerP.appendChild(comeDownBtn);
         }
@@ -242,25 +281,27 @@ pickDiscardBtn.addEventListener("click", () => {
 
 
 discardBtn.addEventListener("click", () => {
-  if (selectedCardIndex === null) {
-    alert("Select a card to discard first!");
-    return;
-  }
-
-  
-    const success = game.discardCard(selectedCardIndex);
-    if (!success) {
-        alert("You must come down before discarding.");
+    if (selectedCardIndices.length === 0) {
+        alert("Select card(s) to discard first!");
         return;
     }
-    selectedCardIndex = null;
+
+    // Discard all selected cards
+    // Sort indices descending to avoid messing up indices when splicing
+    selectedCardIndices.sort((a, b) => b - a);
+    for (const index of selectedCardIndices) {
+        const success = game.discardCard(index);
+        if (!success) {
+            alert("You cannot discard yet! Finish your Blitz first.");
+            return;
+        }
+    }
+
     selectedCardIndices = [];
-
-
-  
     game.nextP();
     renderHands();
 });
+
 
 startRoundBtn.addEventListener("click", () => {
   game.startRound();

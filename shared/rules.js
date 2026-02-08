@@ -37,6 +37,74 @@ export function isValidRun(cards) {
     return true;
 }
 
-export function isValidMeld(cards) {
-    return isValidSet(cards) || isValidRun(cards);
+export function isValidMeld(cards, rule) {
+    if (!cards || cards.length === 0){
+        return false;
+    }
+    if (!rule){
+        return false;
+    }
+
+    rule = rule.toLowerCase(); // normalize to lowercase for comparisons
+
+    if (rule === "blitz") {
+        return true; 
+    }
+
+    if (rule.startsWith("set")) {
+        const requiredLength = parseInt(rule.slice(3));
+        if (cards.length !== requiredLength){
+            return false;
+        }
+        return isSet(cards);
+    }
+
+    if (rule.startsWith("run")) {
+        const requiredLength = parseInt(rule.slice(3));
+        if (cards.length !== requiredLength){
+            return false;
+        }
+        return isRun(cards);
+    }
+
+    return false;
 }
+
+// helpers
+function isSet(cards) {
+    if (cards.length < 3){
+        return false;
+    }
+    const value = cards[0].value;
+    const suits = new Set();
+    for (const card of cards) {
+        if (card.value !== value){
+            return false;
+        }
+        if (suits.has(card.suit)){
+            return false;
+        }
+
+        suits.add(card.suit);
+    }
+    return true;
+}
+
+function isRun(cards) {
+    if (cards.length < 2){
+        return false;
+    }
+    const suit = cards[0].suit;
+    if (!cards.every(c => c.suit === suit)){
+        return false;
+    }
+
+    const values = cards.map(c => c.value).sort((a, b) => a - b);
+    for (let i = 1; i < values.length; i++) {
+        if (values[i] !== values[i - 1] + 1){
+            return false;
+        }
+    }
+    return true;
+}
+

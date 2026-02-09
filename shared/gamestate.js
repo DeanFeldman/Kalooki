@@ -43,6 +43,10 @@ export class GameState {
     this.currentPlayerIndex = 0;
     this.roundStarted = true;
     this.hasDrawn = false;
+
+    this.hasDrawn = false;
+    this.topDiscardBuyable = false;
+
     
 
     // Deal 13 cards to each player
@@ -59,21 +63,25 @@ export class GameState {
   }
 
   nextP() {
-      if (this.roundOver) {
-          this.playersPlayedAfterBlitz.add(this.currentPlayerIndex);
+    // If Blitz has happened, track which players have played after Blitz
+    if (this.roundOver) {
+        this.playersPlayedAfterBlitz.add(this.currentPlayerIndex);
 
-          const allDone = this.players.every((_, i) =>i === this.winnerIndex || this.playersPlayedAfterBlitz.has(i));
+        const allDone = this.players.every((_, i) =>
+            i === this.winnerIndex || this.playersPlayedAfterBlitz.has(i)
+        );
 
-          if (allDone) {
-              this.endRound();
-              return;
-          }
-      }
+        if (allDone) {
+            this.endRound(); // calculate scores and start next round
+            return;
+        }
+    }
 
-      this.currentPlayerIndex =(this.currentPlayerIndex + 1) % this.players.length;
-
-      this.hasDrawn = false;
+    // Normal turn progression
+    this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.players.length;
+    this.hasDrawn = false;
   }
+
 
 
 
@@ -111,58 +119,33 @@ discardCard(index) {
 
 
 
-    canComeDown() {
-        const player = this.getCurrP();
-        const currentRule = ROUND_RULES[this.currentRound][0];
-        if (currentRule === "Blitz") {
-            return true;
-        }
-        return true; 
+canComeDown() {
+    const player = this.getCurrP();
+    const currentRule = ROUND_RULES[this.currentRound][0];
+    if (!player.selectedCardIndices || player.selectedCardIndices.length === 0) {
+        return false;
     }
-
-// layDownMeld(cardIndices) {
-//     const player = this.getCurrP();
-//     const meldCards = cardIndices.map(i => player.hand[i]);
-//     const currentRule = ROUND_RULES[this.currentRound][0];
-
-//     // Blitz rule: cannot lay down until hand is empty
-//     // if (currentRule === "Blitz" && !this.canComeDown()) {
-//     //     return false;
-//     // }
-
-//     if (!isValidMeld(meldCards, currentRule)) {
-//       return false;
-//     }
-
-//     if (currentRule.toLowerCase().startsWith("run") || currentRule.toLowerCase().startsWith("set")) {
-//         if (!isValidMeld(meldCards, currentRule)) {
-//             return false;
-//         }
-//     }
-
-//     player.hand = player.hand.filter((_, i) => !cardIndices.includes(i));
-//     player.melds.push(meldCards);
-//     player.hasComeDown = true;
-
-//     return true;
-// }
+    const meldCards = player.selectedCardIndices.map(i => player.hand[i]);
+    return isValidMeld(meldCards, currentRule);
+}
 
 layDownMeld(cardIndices) {
     const player = this.getCurrP();
     const meldCards = cardIndices.map(i => player.hand[i]);
     const currentRule = ROUND_RULES[this.currentRound][0];
 
+    // Validate meld according to rule
     if (!isValidMeld(meldCards, currentRule)) {
         return false;
     }
 
-    // Remove cards
+    // Remove cards from hand and add to melds
     player.hand = player.hand.filter((_, i) => !cardIndices.includes(i));
     player.melds.push(meldCards);
     player.hasComeDown = true;
 
-    // BLITZ WIN CONDITION
-    if (currentRule === "Blitz" && player.hand.length === 0) {
+    // Blitz special: if hand is empty, mark round as over
+    if (currentRule.toLowerCase() === "blitz" && player.hand.length === 0) {
         this.roundOver = true;
         this.winnerIndex = this.currentPlayerIndex;
     }
@@ -217,20 +200,15 @@ layDownMeld(cardIndices) {
   }
 
 
-  endRound() {
-    // score everyone except winner
+endRound() {
+    // Calculate scores: winner gets 0, everyone else counts remaining cards
     this.players.forEach((player, i) => {
-        if (i === this.winnerIndex){
-          return;
-        }
+        if (i === this.winnerIndex) return;
 
         const points = player.hand.reduce((sum, card) => {
-            if (card.rank === "A"){
-              return sum + 15;
-            }
-            if (["K", "Q", "J"].includes(card.rank)){
-              return sum + 10;
-            }
+            if (card.rank === "A") return sum + 11;
+            if (["K", "Q", "J"].includes(card.rank)) return sum + 10;
+            if (card.rank === "JOKER") return sum + 25;
             return sum + Number(card.rank);
         }, 0);
 
@@ -241,7 +219,11 @@ layDownMeld(cardIndices) {
     this.roundOver = false;
     this.winnerIndex = null;
     this.playersPlayedAfterBlitz.clear();
+
+    // Auto-start next round after short delay
+    setTimeout(() => this.startRound(), 1500);
 }
+
 
 
 

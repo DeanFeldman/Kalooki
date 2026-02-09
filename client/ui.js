@@ -2,7 +2,8 @@ import { cardToDisplay } from "../shared/card.js";
 import { GameState } from "../shared/gamestate.js";
 import { ROUND_RULES } from "../shared/rules.js";
 
-let game = new GameState(["Player1", "Player2", "Player3", "Player4"]);
+//let game = new GameState(["Player1", "Player2", "Player3", "Player4"]);
+let game = new GameState(["Player1", "Player"]);
 
 
 const handsP = document.getElementById("hands");
@@ -163,9 +164,25 @@ function renderHands() {
 
     });
     if (game.roundOver) {
-        turnP.textContent =
-            `Blitz finished! Winner: ${game.players[game.winnerIndex].name}`;
+        turnP.textContent =`Blitz finished! Winner: ${game.players[game.winnerIndex].name}`;
+        setActionButtons(false);
+    } else {
+        turnP.textContent = `Current turn: ${game.getCurrP().name}`;
+        setActionButtons(true);
     }
+    
+    // Show scores along with player names
+    game.players.forEach((player, i) => {
+        const playerP = playerElements[i];
+
+        const nameSpan = document.createElement("span");
+        nameSpan.textContent = `${player.name} (Score: ${player.score || 0})`;
+        playerP.appendChild(nameSpan);
+
+        playerP.appendChild(document.createElement("br")); // line break before hand
+    });
+
+
 
 
     // Discard pile
@@ -237,6 +254,13 @@ function buyDiscardForPlayer(playerIndex) {
     alert("Cannot buy discard!");
   }
 }
+
+function setActionButtons(enabled) {
+    drawBtn.disabled = !enabled;
+    pickDiscardBtn.disabled = !enabled;
+    discardBtn.disabled = !enabled;
+}
+
 
 function buyTopDiscardForPlayer(playerIndex) {
     const player = game.players[playerIndex];
@@ -323,7 +347,10 @@ startRoundBtn.addEventListener("click", () => {
   drawBtn.disabled = false;
   pickDiscardBtn.disabled = false;
   discardBtn.disabled = false;
+  setActionButtons(true);
+
   renderHands();
+  
 });
 
 resetBtn.addEventListener("click", () => {

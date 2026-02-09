@@ -36,7 +36,6 @@ export function isValidRun(cards) {
 
     return true;
 }
-
 export function isValidMeld(cards, rule) {
     if (!cards || cards.length === 0){
         return false;
@@ -45,10 +44,14 @@ export function isValidMeld(cards, rule) {
         return false;
     }
 
-    rule = rule.toLowerCase(); // normalize to lowercase for comparisons
+    rule = rule.toLowerCase();
 
     if (rule === "blitz") {
-        return true; 
+        // Blitz rule: either a run of same suit OR set of 3/4 same rank and same suit
+        if (cards.length < 3){
+            return false;
+        }
+        return isBlitzSet(cards) || isRun(cards);
     }
 
     if (rule.startsWith("set")) {
@@ -70,28 +73,18 @@ export function isValidMeld(cards, rule) {
     return false;
 }
 
-// helpers
-function isSet(cards) {
-    if (cards.length < 3){
+// Blitz set: 3 or 4 cards of same rank, all same suit
+function isBlitzSet(cards) {
+    if (cards.length < 3 || cards.length > 4){
         return false;
     }
-    const value = cards[0].value;
-    const suits = new Set();
-    for (const card of cards) {
-        if (card.value !== value){
-            return false;
-        }
-        if (suits.has(card.suit)){
-            return false;
-        }
-
-        suits.add(card.suit);
-    }
-    return true;
+    const rank = cards[0].rank;
+    //const suit = cards[0].suit;
+    return cards.every(c => c.rank === rank && c.suit === suit);
 }
 
 function isRun(cards) {
-    if (cards.length < 2){
+    if (cards.length < 3){
         return false;
     }
     const suit = cards[0].suit;
@@ -108,3 +101,21 @@ function isRun(cards) {
     return true;
 }
 
+// Normal set: same value, different suits allowed
+function isSet(cards) {
+    if (cards.length < 3){
+        return false;
+    }
+    const value = cards[0].value;
+    const suits = new Set();
+    for (const card of cards) {
+        if (card.value !== value) {
+            return false;
+        }
+        if (suits.has(card.suit)){
+            return false;
+         }
+        suits.add(card.suit);
+    }
+    return true;
+}

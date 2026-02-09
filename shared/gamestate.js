@@ -20,6 +20,10 @@ export class GameState {
     this.roundOver = false;
     this.winnerIndex = null;
     this.scores = new Array(playerNames.length).fill(0);
+    this.roundOver = false;
+    this.winnerIndex = null;
+    this.playersPlayedAfterBlitz = new Set();
+
   }
 
   startRound() {
@@ -55,24 +59,22 @@ export class GameState {
   }
 
   nextP() {
-    if (this.roundOver) {
-        
-        const allDone = this.players.every((p, i) => i === this.winnerIndex || p.hasPlayedAfterBlitz);
+      if (this.roundOver) {
+          this.playersPlayedAfterBlitz.add(this.currentPlayerIndex);
 
-        if (allDone) {
-            this.endRound();
-            return;
-        }
-    }
+          const allDone = this.players.every((_, i) =>i === this.winnerIndex || this.playersPlayedAfterBlitz.has(i));
 
-    this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.players.length;
+          if (allDone) {
+              this.endRound();
+              return;
+          }
+      }
 
-    this.hasDrawn = false;
+      this.currentPlayerIndex =(this.currentPlayerIndex + 1) % this.players.length;
 
-    if (this.roundOver && this.currentPlayerIndex !== this.winnerIndex) {
-        this.players[this.currentPlayerIndex].hasPlayedAfterBlitz = true;
-    }
-}
+      this.hasDrawn = false;
+  }
+
 
 
   drawFromDeck() {
@@ -216,20 +218,31 @@ layDownMeld(cardIndices) {
 
 
   endRound() {
-      this.players.forEach((player, i) => {
-          if (i === this.winnerIndex){
-            return;
-          }
+    // score everyone except winner
+    this.players.forEach((player, i) => {
+        if (i === this.winnerIndex){
+          return;
+        }
 
-          const points = player.hand.reduce((sum, card) => sum + this.cardValue(card),0);
+        const points = player.hand.reduce((sum, card) => {
+            if (card.rank === "A"){
+              return sum + 15;
+            }
+            if (["K", "Q", "J"].includes(card.rank)){
+              return sum + 10;
+            }
+            return sum + Number(card.rank);
+        }, 0);
 
-          this.scores[i] += points;
-      });
+        player.score = (player.score || 0) + points;
+    });
 
-      this.currentRound++;
-      this.roundOver = false;
-      this.winnerIndex = null;
-  }
+    this.currentRound++;
+    this.roundOver = false;
+    this.winnerIndex = null;
+    this.playersPlayedAfterBlitz.clear();
+}
+
 
 
 }

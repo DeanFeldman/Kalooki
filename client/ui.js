@@ -180,7 +180,9 @@ function renderHands() {
         discardP.appendChild(cardSpan);
     }
 
-    turnP.textContent = `Current turn: ${game.getCurrP().name}`;
+    if (!game.roundOver) {
+        turnP.textContent = `Current turn: ${game.getCurrP().name}`;
+    }
 
     const roundTextP = document.getElementById("roundText");
     if(roundTextP){
@@ -204,10 +206,17 @@ function attemptComeDown(playerIndex) {
     const success = game.layDownMeld(cardIndices);
 
     if (success) {
-        alert("Meld laid down successfully!");
-        selectedCardIndex = null;
+        selectedCardIndices = [];
+
+        if (game.roundOver) {
+            renderHands();
+            return;
+        }
+
+        game.nextP();
         renderHands();
-    } else {
+    }
+    else {
         alert("Invalid meld! Check the rules for this round.");
     }
 }

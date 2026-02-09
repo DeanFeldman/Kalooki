@@ -17,6 +17,9 @@ export class GameState {
     this.currentRound = 0;
     this.hasDrawn = false;
     this.topDiscardBuyable = false;
+    this.roundOver = false;
+    this.winnerIndex = null;
+    this.scores = new Array(playerNames.length).fill(0);
   }
 
   startRound() {
@@ -26,11 +29,17 @@ export class GameState {
       player.melds = [];
       player.hasComeDown = false;
       player.remainingRules = [...ROUND_RULES];
+      
+      
+      ///
+      player.hasPlayedAfterBlitz = false;
+
     });
     this.discardPile = [];
     this.currentPlayerIndex = 0;
     this.roundStarted = true;
     this.hasDrawn = false;
+    
 
     // Deal 13 cards to each player
     for (let i = 0; i < 13; i++) {
@@ -46,9 +55,25 @@ export class GameState {
   }
 
   nextP() {
+    if (this.roundOver) {
+        
+        const allDone = this.players.every((p, i) => i === this.winnerIndex || p.hasPlayedAfterBlitz);
+
+        if (allDone) {
+            this.endRound();
+            return;
+        }
+    }
+
     this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.players.length;
+
     this.hasDrawn = false;
-  }
+
+    if (this.roundOver && this.currentPlayerIndex !== this.winnerIndex) {
+        this.players[this.currentPlayerIndex].hasPlayedAfterBlitz = true;
+    }
+}
+
 
   drawFromDeck() {
     if (this.hasDrawn){
@@ -85,32 +110,60 @@ discardCard(index) {
 
 
     canComeDown() {
+        const player = this.getCurrP();
         const currentRule = ROUND_RULES[this.currentRound][0];
         if (currentRule === "Blitz") {
-            return this.getCurrP().hand.length === 0;
+            return true;
         }
         return true; 
     }
+
+// layDownMeld(cardIndices) {
+//     const player = this.getCurrP();
+//     const meldCards = cardIndices.map(i => player.hand[i]);
+//     const currentRule = ROUND_RULES[this.currentRound][0];
+
+//     // Blitz rule: cannot lay down until hand is empty
+//     // if (currentRule === "Blitz" && !this.canComeDown()) {
+//     //     return false;
+//     // }
+
+//     if (!isValidMeld(meldCards, currentRule)) {
+//       return false;
+//     }
+
+//     if (currentRule.toLowerCase().startsWith("run") || currentRule.toLowerCase().startsWith("set")) {
+//         if (!isValidMeld(meldCards, currentRule)) {
+//             return false;
+//         }
+//     }
+
+//     player.hand = player.hand.filter((_, i) => !cardIndices.includes(i));
+//     player.melds.push(meldCards);
+//     player.hasComeDown = true;
+
+//     return true;
+// }
 
 layDownMeld(cardIndices) {
     const player = this.getCurrP();
     const meldCards = cardIndices.map(i => player.hand[i]);
     const currentRule = ROUND_RULES[this.currentRound][0];
 
-    // Blitz rule: cannot lay down until hand is empty
-    if (currentRule === "Blitz" && !this.canComeDown()) {
+    if (!isValidMeld(meldCards, currentRule)) {
         return false;
     }
 
-    if (currentRule.toLowerCase().startsWith("run") || currentRule.toLowerCase().startsWith("set")) {
-        if (!isValidMeld(meldCards, currentRule)) {
-            return false;
-        }
-    }
-
+    // Remove cards
     player.hand = player.hand.filter((_, i) => !cardIndices.includes(i));
     player.melds.push(meldCards);
     player.hasComeDown = true;
+
+    // BLITZ WIN CONDITION
+    if (currentRule === "Blitz" && player.hand.length === 0) {
+        this.roundOver = true;
+        this.winnerIndex = this.currentPlayerIndex;
+    }
 
     return true;
 }
@@ -147,4 +200,38 @@ layDownMeld(cardIndices) {
 
     return { boughtCard: topDiscard, penaltyCard };
   }
+
+  cardValue(card) {
+    if (card.rank === "A"){
+      return 11;
+    }
+    if (["K", "Q", "J"].includes(card.rank)){
+      return 10;
+    }
+    if(["JOKER"].includes(card.rank)){
+      return 25;
+    }
+    return Number(card.rank);
+  }
+
+
+  endRound() {
+      this.players.forEach((player, i) => {
+          if (i === this.winnerIndex){
+            return;
+          }
+
+          const points = player.hand.reduce((sum, card) => sum + this.cardValue(card),0);
+
+          this.scores[i] += points;
+      });
+
+      this.currentRound++;
+      this.roundOver = false;
+      this.winnerIndex = null;
+  }
+
+
 }
+
+

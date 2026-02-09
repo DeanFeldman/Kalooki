@@ -162,6 +162,11 @@ function renderHands() {
 
 
     });
+    if (game.roundOver) {
+        turnP.textContent =
+            `Blitz finished! Winner: ${game.players[game.winnerIndex].name}`;
+    }
+
 
     // Discard pile
     const discardP = document.getElementById("discardPile");

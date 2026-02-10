@@ -3,7 +3,7 @@ import { GameState } from "../shared/gamestate.js";
 import { ROUND_RULES } from "../shared/rules.js";
 
 //let game = new GameState(["Player1", "Player2", "Player3", "Player4"]);
-let game = new GameState(["Player1", "Player"]);
+let game = new GameState(["Player1", "Player2"]);
 
 
 const handsP = document.getElementById("hands");

@@ -1,5 +1,6 @@
 import { Deck } from "./deck.js";
 import { isValidMeld, ROUND_RULES } from "./rules.js";
+import { RANKS, SUITS } from "./card.js";
 
 export class GameState {
   constructor(playerNames) {
@@ -8,7 +9,7 @@ export class GameState {
       hand: [],
       melds: [],
       hasComeDown: false,
-      remainingRules: [...ROUND_RULES] // tracks which rules are left for the player
+      remainingRules: [...ROUND_RULES] 
     }));
     this.deck = new Deck();
     this.discardPile = [];
@@ -120,13 +121,7 @@ discardCard(index) {
 
 
 canComeDown() {
-    const player = this.getCurrP();
-    const currentRule = ROUND_RULES[this.currentRound][0];
-    if (!player.selectedCardIndices || player.selectedCardIndices.length === 0) {
-        return false;
-    }
-    const meldCards = player.selectedCardIndices.map(i => player.hand[i]);
-    return isValidMeld(meldCards, currentRule);
+   return true;
 }
 
 layDownMeld(cardIndices) {
@@ -134,24 +129,39 @@ layDownMeld(cardIndices) {
     const meldCards = cardIndices.map(i => player.hand[i]);
     const currentRule = ROUND_RULES[this.currentRound][0];
 
-    // Validate meld according to rule
-    if (!isValidMeld(meldCards, currentRule)) {
-        return false;
+    if (currentRule.toLowerCase() === "blitz") {
+        // Try to split into multiple valid melds
+        const possibleMelds = splitIntoMelds(meldCards); 
+        if (!possibleMelds || possibleMelds.length === 0) {
+            return false; 
+        }
+
+        // Remove all cards from hand
+        player.hand = player.hand.filter((_, i) => !cardIndices.includes(i));
+        player.melds.push(...possibleMelds);
+        player.hasComeDown = true;
+
+        // If hand empty, blitz is complete
+        if (player.hand.length === 0) {
+            this.roundOver = true;
+            this.winnerIndex = this.currentPlayerIndex;
+        }
+
+        return true;
+    } else {
+        // Normal meld rules
+        if (!isValidMeld(meldCards, currentRule)){
+          return false;
+        }
+        player.hand = player.hand.filter((_, i) => !cardIndices.includes(i));
+        player.melds.push(meldCards);
+        player.hasComeDown = true;
+        return true;
     }
-
-    // Remove cards from hand and add to melds
-    player.hand = player.hand.filter((_, i) => !cardIndices.includes(i));
-    player.melds.push(meldCards);
-    player.hasComeDown = true;
-
-    // Blitz special: if hand is empty, mark round as over
-    if (currentRule.toLowerCase() === "blitz" && player.hand.length === 0) {
-        this.roundOver = true;
-        this.winnerIndex = this.currentPlayerIndex;
-    }
-
-    return true;
 }
+
+
+
 
 
   buyDiscard(playerIndex) {

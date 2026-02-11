@@ -2,8 +2,6 @@ import { cardToDisplay } from "../shared/card.js";
 import { GameState } from "../shared/gamestate.js";
 import { ROUND_RULES } from "../shared/rules.js";
 
-//let game = new GameState(["Player1", "Player2", "Player3", "Player4"]);
-let game = new GameState(["Player1", "Player2"]);
 
 
 const handsP = document.getElementById("hands");
@@ -13,6 +11,14 @@ const turnP = document.getElementById("turn");
 const startRoundBtn = document.getElementById("startRoundButton");
 const pickDiscardBtn = document.getElementById("pickDiscardButton");
 const resetBtn = document.getElementById("resetButton");
+const roundSelect = document.getElementById("roundSelect");
+const jumpRoundBtn = document.getElementById("jumpRoundButton");
+
+
+//let game = new GameState(["Player1", "Player2", "Player3", "Player4"]);
+let game = new GameState(["Player1", "Player2"]);
+
+populateRoundSelect();
 
 let selectedCardIndex = null;
 let selectedCardIndices = []; 
@@ -104,13 +110,35 @@ function renderHands() {
             const meldDiv = document.createElement("div");
             meldDiv.textContent = "Melds: ";
 
-            player.melds.forEach(meld => {
+            player.melds.forEach((meld, meldIndex) => {
                 const meldSpan = document.createElement("span");
                 meldSpan.textContent = "[" + meld.map(cardToDisplay).join(" ") + "]";
                 meldSpan.style.marginRight = "8px";
+
+                // Click meld to add ONE selected card from current player's hand
+                meldSpan.style.cursor = "pointer";
+                meldSpan.title = "Click to add your selected card to this meld";
+
+                meldSpan.addEventListener("click", () => {
+                    if (selectedCardIndices.length !== 1) {
+                    alert("Select EXACTLY 1 card to add.");
+                    return;
+                    }
+
+                    const handIndex = selectedCardIndices[0];
+                    const ok = game.addCardToMeld(i, meldIndex, handIndex);
+                    if (!ok) {
+                    alert("That card cannot be added to this meld.");
+                    return;
+                    }
+
+                    selectedCardIndices = [];
+                    renderHands();
+                });
+
                 meldDiv.appendChild(meldSpan);
             });
-
+                    
             playerP.appendChild(document.createElement("br"));
             playerP.appendChild(meldDiv);
         }
@@ -122,15 +150,26 @@ function renderHands() {
             comeDownBtn.textContent = "Come Down";
             
             comeDownBtn.addEventListener("click", () => {
+                
                 if (selectedCardIndices.length === 0) { 
                     alert("Select cards to come down!");
                     return;
                 }
 
-                if (!game.canComeDown()) {
-                    alert("You cannot come down yet! Use all cards first (Blitz rule).");
-                    return;
+               const roundName = ROUND_RULES[game.currentRound][0].toLowerCase();
+
+                if (roundName === "blitz" && !game.roundOver) {
+                    if (!game.canComeDown(selectedCardIndices)) {
+                        alert("Blitz rule: select all cards, or all but ONE (leave 1 card to discard).");
+                        return;
+                    }
                 }
+
+                const p = game.getCurrP();
+                console.log("Selected indices:", selectedCardIndices);
+                console.log("Selected cards:", selectedCardIndices.map(i => p.hand[i]));
+                console.log("Selected pretty:", selectedCardIndices.map(i => cardToDisplay(p.hand[i])));
+                                    
 
                 const success = game.layDownMeld(selectedCardIndices);
                 if (success) {
@@ -144,6 +183,19 @@ function renderHands() {
 
             playerP.appendChild(document.createElement("br"));
             playerP.appendChild(comeDownBtn);
+
+            if (game.roundOver && i === game.currentPlayerIndex && i !== game.winnerIndex) {
+                const doneBtn = document.createElement("button");
+                doneBtn.textContent = "Done";
+
+                doneBtn.addEventListener("click", () => {
+                    selectedCardIndices = [];
+                    game.nextP();
+                    renderHands();
+                });
+
+                playerP.appendChild(doneBtn);  
+            }     
         }
 
 
@@ -182,6 +234,8 @@ function renderHands() {
         playerP.appendChild(document.createElement("br")); // line break before hand
     });
 
+    if (roundSelect) roundSelect.value = String(game.currentRound);
+
 
 
 
@@ -207,8 +261,31 @@ function renderHands() {
             ? "Current Game Mode: " + ROUND_RULES[game.currentRound].join(", ")
             : "Current Game Mode: Not started";
     }
+
+    if (game.betweenRounds) {
+        startRoundBtn.disabled = false;
+        setActionButtons(false);   
+        turnP.textContent = `Round finished! Click Start Round for: ${ROUND_RULES[game.currentRound].join(", ")}`;
+    }
+
 }
 
+
+function populateRoundSelect() {
+  if (!roundSelect){
+    return;
+  }
+  roundSelect.innerHTML = "";
+
+  ROUND_RULES.forEach((rules, idx) => {
+    const opt = document.createElement("option");
+    opt.value = String(idx);
+    opt.textContent = `${idx + 1}: ${rules.join(" + ")}`;
+    roundSelect.appendChild(opt);
+  });
+
+  roundSelect.value = String(game.currentRound);
+}
 
 
 function attemptComeDown(playerIndex) {
@@ -302,43 +379,54 @@ drawBtn.addEventListener("click", () => {
   renderHands();
 });
 
+jumpRoundBtn?.addEventListener("click", () => {
+  const idx = Number(roundSelect.value);
+
+  if (Number.isNaN(idx) || idx < 0 || idx >= ROUND_RULES.length) return;
+
+  game.currentRound = idx;
+  game.roundStarted = false;
+  game.roundOver = false;
+  game.winnerIndex = null;
+  game.playersPlayedAfterBlitz?.clear?.();
+
+  startRoundBtn.disabled = false;
+  setActionButtons(false);
+
+  renderHands();
+});
+
 pickDiscardBtn.addEventListener("click", () => {
-  const currIndex = game.currentPlayerIndex;
   if (game.hasDrawn) {
     alert("You can only draw once per turn!");
     return;
   }
 
-  const boughtCard = game.buyDiscard(currIndex);
-  if (boughtCard) {
-    renderHands();
-  } else {
-    alert("Cannot buy the discard pile!");
-  }
+  const card = game.drawfromDisc();
+  if (card) renderHands();
+  else alert("Discard pile is empty!");
 });
 
 
 discardBtn.addEventListener("click", () => {
-    if (selectedCardIndices.length === 0) {
-        alert("Select card(s) to discard first!");
-        return;
-    }
+  if (selectedCardIndices.length !== 1) {
+    alert("Select EXACTLY 1 card to discard.");
+    return;
+  }
 
-    // Discard all selected cards
-    // Sort indices descending to avoid messing up indices when splicing
-    selectedCardIndices.sort((a, b) => b - a);
-    for (const index of selectedCardIndices) {
-        const success = game.discardCard(index);
-        if (!success) {
-            alert("You cannot discard yet! Finish your Blitz first.");
-            return;
-        }
-    }
+  const index = selectedCardIndices[0];
+  const success = game.discardCard(index);
 
-    selectedCardIndices = [];
-    game.nextP();
-    renderHands();
+  if (!success) {
+    alert("You must draw first, and you can only discard once per turn.");
+    return;
+  }
+
+  selectedCardIndices = [];
+  game.nextP();
+  renderHands();
 });
+
 
 
 startRoundBtn.addEventListener("click", () => {
@@ -354,13 +442,14 @@ startRoundBtn.addEventListener("click", () => {
 });
 
 resetBtn.addEventListener("click", () => {
-  game = new GameState(["Player1", "Player2", "Player3", "Player4"]);
+  game = game;
   game.deck.shuffle();
   selectedCardIndex = null;
   startRoundBtn.disabled = false;
   drawBtn.disabled = true;
   pickDiscardBtn.disabled = true;
   discardBtn.disabled = true;
+  populateRoundSelect();
   renderHands();
 });
 

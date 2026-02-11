@@ -16,6 +16,10 @@ export function isValidMeld(cards, rule) {
     }
 
     rule = rule.toLowerCase();
+    
+    if (rule === "any") {
+        return (isRun(cards) || isSet(cards));
+    }
 
     if (rule === "blitz") {
         return isRun(cards) || isBlitzSet(cards);
@@ -25,6 +29,9 @@ export function isValidMeld(cards, rule) {
         const len = Number(rule.slice(3));
         return cards.length === len && isRun(cards);
     }
+
+ 
+    
 
     if (rule.startsWith("set")) {
         const len = Number(rule.slice(3));

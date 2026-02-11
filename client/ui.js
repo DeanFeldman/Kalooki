@@ -442,7 +442,7 @@ startRoundBtn.addEventListener("click", () => {
 });
 
 resetBtn.addEventListener("click", () => {
-  game = game;
+  //game = game;
   game.deck.shuffle();
   selectedCardIndex = null;
   startRoundBtn.disabled = false;

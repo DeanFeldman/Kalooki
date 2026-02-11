@@ -17,13 +17,15 @@ export function isValidMeld(cards, rule) {
 
     rule = rule.toLowerCase();
     
-    if (rule === "any") {
-        return (isRun(cards) || isSet(cards));
-    }
+   
 
     if (rule === "blitz") {
         return isRun(cards) || isBlitzSet(cards);
     }
+
+    if (rule === "any") {
+        return isRun(cards) || isSet(cards);
+    }   
 
     if (rule.startsWith("run")) {
         const len = Number(rule.slice(3));
@@ -80,27 +82,25 @@ function isRun(cards) {
     return gaps <= jokers.length;
 }
 
-
-
 function isSet(cards) {
-    if (cards.length < 3){
-        return false;
-    }
+  if (cards.length < 3) return false;
 
-    const rank = cards[0].rank;
-    const suits = new Set();
+  const jokers = cards.filter(c => c.rank === "JOKER" || c.isJoker);
+  const normal = cards.filter(c => !(c.rank === "JOKER" || c.isJoker));
 
-    for (const card of cards) {
-        if (card.rank !== rank){
-            return false;
-        }
-        if (suits.has(card.suit)){
-            return false;
-        }
-        suits.add(card.suit);
-    }
+  if (normal.length === 0) return false;
 
-    return true;
+  const rank = normal[0].rank;
+
+  if (!normal.every(c => c.rank === rank)) return false;
+
+  const suits = new Set();
+  for (const c of normal) {
+    if (suits.has(c.suit)) return false;
+    suits.add(c.suit);
+  }
+
+  return true;
 }
 
 

@@ -138,10 +138,17 @@ discardCard(index) {
   this.topDiscardBuyable = true;
 
   this.hasDiscarded = true;
+  const ruleName = currentRule.toLowerCase();
 
-  if (currentRule.toLowerCase() === "blitz" && player.hasComeDown && player.hand.length === 0) {
+
+  if (player.hasComeDown && player.hand.length === 0) {
     this.roundOver = true;
     this.winnerIndex = this.currentPlayerIndex;
+
+    if (ruleName !== "blitz") {
+      this.endRound();     
+    }
+    
   }
 
   return true;
@@ -394,30 +401,42 @@ function splitIntoMelds(cards, isValidMeldFn) {
       if (remaining.length >= size) {
         const combs = combinations(rest, size - 1);
         for (const c of combs) {
-          if (timedOut()) return null;
+          if (timedOut()){
+            return null;
+          }
           const meld = [anchor, ...c];
           if (isValidBlitzMeld(meld, isValidMeldFn)) candidates.push(meld);
-          if (candidates.length >= MAX_CANDIDATES) break;
+          if (candidates.length >= MAX_CANDIDATES){
+            break;
+          }
         }
       }
-      if (candidates.length >= MAX_CANDIDATES) break;
+      if (candidates.length >= MAX_CANDIDATES){
+        break;
+      }
     }
 
     // Runs (3..remaining.length) but cap hard
     for (let size = 3; size <= remaining.length && candidates.length < MAX_CANDIDATES; size++) {
       const combs = combinations(rest, size - 1);
       for (const c of combs) {
-        if (timedOut()) return null;
+        if (timedOut()){
+          return null;
+        }
         const meld = [anchor, ...c];
         if (isValidBlitzMeld(meld, isValidMeldFn)) candidates.push(meld);
-        if (candidates.length >= MAX_CANDIDATES) break;
+        if (candidates.length >= MAX_CANDIDATES){
+          break;
+        }
       }
     }
 
     candidates.sort((a, b) => b.length - a.length);
 
     for (const meld of candidates) {
-      if (timedOut()) return null;
+      if (timedOut()){
+        return null;
+      }
       const nextRemaining = remaining.filter(card => !meld.includes(card));
       const tail = solve(nextRemaining);
       if (tail) return [meld, ...tail];

@@ -423,7 +423,9 @@ discardBtn.addEventListener("click", () => {
   }
 
   selectedCardIndices = [];
-  game.nextP();
+    if (!game.betweenRounds) {
+        game.nextP();
+    }
   renderHands();
 });
 

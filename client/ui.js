@@ -148,9 +148,14 @@ function renderHands() {
         if (i === game.currentPlayerIndex) {
             const comeDownBtn = document.createElement("button");
             comeDownBtn.textContent = "Come Down";
+            comeDownBtn.disabled = !game.hasDrawn;
             
             comeDownBtn.addEventListener("click", () => {
                 
+                if (!game.hasDrawn) {
+                    alert("You must draw first before making a move.");
+                    return;
+                }
                 if (selectedCardIndices.length === 0) { 
                     alert("Select cards to come down!");
                     return;

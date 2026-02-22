@@ -9,7 +9,7 @@ export class GameState {
       hand: [],
       melds: [],
       hasComeDown: false,
-      remainingRules: [...ROUND_RULES] 
+      remainingRules: [] 
     }));
     this.deck = new Deck();
     this.discardPile = [];
@@ -26,7 +26,6 @@ export class GameState {
     this.playersPlayedAfterBlitz = new Set();
     this.hasDiscarded = false;
 
-
   }
 
   startRound() {
@@ -35,7 +34,7 @@ export class GameState {
       player.hand = [];
       player.melds = [];
       player.hasComeDown = false;
-      player.remainingRules = [...ROUND_RULES];
+      player.remainingRules = [];
       
       
       ///
@@ -69,27 +68,26 @@ export class GameState {
   }
 
   nextP() {
-    // If Blitz has happened, track which players have played after Blitz
-    if (this.roundOver) {
-        this.playersPlayedAfterBlitz.add(this.currentPlayerIndex);
+      // ALWAYS reset turn state first
+      this.hasDrawn = false;
+      this.hasDiscarded = false;
 
-        const allDone = this.players.every((_, i) =>
-            i === this.winnerIndex || this.playersPlayedAfterBlitz.has(i)
-        );
+      if (this.roundOver) {
+          this.playersPlayedAfterBlitz.add(this.currentPlayerIndex);
 
-        if (allDone) {
-            this.endRound(); // calculate scores and start next round
-            return;
-        }
-    }
+          const allDone = this.players.every((_, i) =>
+              i === this.winnerIndex || this.playersPlayedAfterBlitz.has(i)
+          );
 
-    // Normal turn progression
-    this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.players.length;
-    this.hasDiscarded = false;
+          if (allDone) {
+              this.endRound();
+              return;
+          }
+      }
 
-    this.hasDrawn = false;
+      this.currentPlayerIndex =
+          (this.currentPlayerIndex + 1) % this.players.length;
   }
-
 
 
 
@@ -128,11 +126,19 @@ discardCard(index) {
   if (this.hasDiscarded){
     return false;
   }
+  
+  if (ROUND_RULES[this.currentRound].length > 1 && player.remainingRules.length > 0) {
+    return false;
+  }
 
   if (index < 0 || index >= player.hand.length){
     return false;
   }
 
+  //   if (player.remainingRules && player.remainingRules.length > 0) {
+  //   return false;
+  // }
+  
   const [card] = player.hand.splice(index, 1);
   this.discardPile.push(card);
   this.topDiscardBuyable = true;
@@ -158,6 +164,9 @@ discardCard(index) {
 
 
 canComeDown(cardIndices) {
+  if (!this.roundStarted || !this.hasDrawn || this.hasDiscarded) {
+    return false;
+  }
   const player = this.getCurrP();
 
   //blitz
@@ -169,13 +178,27 @@ canComeDown(cardIndices) {
 
 layDownMeld(cardIndices) {
     const player = this.getCurrP();
-    const meldCards = cardIndices.map(i => player.hand[i]);
-    const currentRule = ROUND_RULES[this.currentRound][0];
+    if (!this.roundStarted){
+      return false;
+    }
+    if (!this.hasDrawn){
+      return false;
+    }
+    if (this.hasDiscarded){
+      return false;
+    }
+    if (!Array.isArray(cardIndices) || cardIndices.length === 0){
+      return false;
+    }
 
+    const meldCards = cardIndices.map(i => player.hand[i]);
+    const currentRule = ROUND_RULES[this.currentRound][0];   
     
     if (currentRule.toLowerCase() === "blitz") {
       const possibleMelds = splitIntoMelds(meldCards, isValidMeld);
-      if (!possibleMelds || possibleMelds.length === 0) return false;
+      if (!possibleMelds || possibleMelds.length === 0){
+        return false;
+      }
 
       // Remove selected cards + add melds
       player.hand = player.hand.filter((_, i) => !cardIndices.includes(i));
@@ -191,12 +214,12 @@ layDownMeld(cardIndices) {
       return true;
     }
     else {
-      // Normal meld rules
-      let ruleToCheck = currentRule;
+      let ruleToCheck = player.remainingRules.length > 0 ? player.remainingRules[0] : "any";
 
-      if (currentRule.toLowerCase() === "run3") {
-        ruleToCheck = player.hasComeDown ? "any" : "run3";
-      }
+     
+      // if (ruleToCheck.toLowerCase() === "run3" && player.hasComeDown) {
+      //   ruleToCheck = "any";
+      // }
 
       if (!isValidMeld(meldCards, ruleToCheck)) {
         return false;
@@ -204,18 +227,35 @@ layDownMeld(cardIndices) {
 
       player.hand = player.hand.filter((_, i) => !cardIndices.includes(i));
       player.melds.push(meldCards);
-      player.hasComeDown = true;
+
+      if (player.remainingRules.length > 0) {
+        player.remainingRules.shift();
+      }
+
+      if (player.remainingRules.length === 0) {
+        player.hasComeDown = true;
+      }
+
       return true;
-  }
+    }
 }
 
 addCardToMeld(targetPlayerIndex, targetMeldIndex, cardHandIndex) {
+
+  if (!this.roundStarted || !this.hasDrawn || this.hasDiscarded) {
+    return false;
+  }
+
   const curr = this.getCurrP();
   const targetPlayer = this.players[targetPlayerIndex];
-  if (!targetPlayer) return false;
+  if (!targetPlayer){
+    return false;
+  }
 
   const currentRule = ROUND_RULES[this.currentRound][0];
-  if (currentRule.toLowerCase() === "run3" && !curr.hasComeDown) return false;
+  if (currentRule.toLowerCase() === "run3" && !curr.hasComeDown){
+    return false;
+  }
 
   const meld = targetPlayer.melds[targetMeldIndex];
   if (!meld){
@@ -245,7 +285,7 @@ addCardToMeld(targetPlayerIndex, targetMeldIndex, cardHandIndex) {
 
 
   buyDiscard(playerIndex) {
-    if (this.discardPile.length === 0 || this.hasDrawn){
+    if (this.discardPile.length === 0 || !this.hasDrawn){
         return null;
     }
 
@@ -388,9 +428,12 @@ function splitIntoMelds(cards, isValidMeldFn) {
   }
 
   function solve(remaining) {
-    if (timedOut()) return null;
-    if (remaining.length === 0) return [];
-
+    if (timedOut()){
+      return null;
+    }
+    if (remaining.length === 0){
+      return [];
+    }
     const anchor = remaining[0];
     const rest = remaining.slice(1);
 

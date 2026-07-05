@@ -1,463 +1,364 @@
-import { cardToDisplay } from "../shared/card.js";
+import { cardToDisplay, isRedCard } from "../shared/card.js";
 import { GameState } from "../shared/gamestate.js";
-import { ROUND_RULES } from "../shared/rules.js";
+import { formatRule, ROUND_RULES } from "../shared/rules.js";
 
+const els = {
+  players: document.getElementById("players"),
+  drawBtn: document.getElementById("drawButton"),
+  discardBtn: document.getElementById("discardButton"),
+  turn: document.getElementById("turn"),
+  startRoundBtn: document.getElementById("startRoundButton"),
+  pickDiscardBtn: document.getElementById("pickDiscardButton"),
+  resetBtn: document.getElementById("resetButton"),
+  roundSelect: document.getElementById("roundSelect"),
+  jumpRoundBtn: document.getElementById("jumpRoundButton"),
+  comeDownBtn: document.getElementById("comeDownButton"),
+  discardPile: document.getElementById("discardPile"),
+  roundText: document.getElementById("roundText"),
+  statusText: document.getElementById("statusText"),
+  deckCount: document.getElementById("deckCount"),
+  playerNamesInput: document.getElementById("playerNamesInput"),
+  buyHint: document.getElementById("buyHint")
+};
 
-
-const handsP = document.getElementById("hands");
-const drawBtn = document.getElementById("drawButton");
-const discardBtn = document.getElementById("discardButton");
-const turnP = document.getElementById("turn");
-const startRoundBtn = document.getElementById("startRoundButton");
-const pickDiscardBtn = document.getElementById("pickDiscardButton");
-const resetBtn = document.getElementById("resetButton");
-const roundSelect = document.getElementById("roundSelect");
-const jumpRoundBtn = document.getElementById("jumpRoundButton");
-
-
-//let game = new GameState(["Player1", "Player2", "Player3", "Player4"]);
-let game = new GameState(["Player1", "Player2"]);
+let game = new GameState(getNamesFromInput());
+let selectedCardIndices = [];
+let draggedCardIndex = null;
 
 populateRoundSelect();
-
-let selectedCardIndex = null;
-let selectedCardIndices = []; 
-
-let draggedCardIndex = null;
-let draggedFromPlayerIndex = null;
-
-
-const playerElements = [
-  document.getElementById("player1"),
-  document.getElementById("player2"),
-  document.getElementById("player3"),
-  document.getElementById("player4")
-];
-
-function renderHands() {
-    game.players.forEach((player, i) => {
-        const playerP = playerElements[i];
-        playerP.innerHTML = "";
-
-        // Player name
-        const nameSpan = document.createElement("span");
-        //nameSpan.textContent = player.name + (i === game.currentPlayerIndex ? " ← Your Turn" : "") + ": ";
-        playerP.appendChild(nameSpan);
-
-        // Player hand
-        player.hand.forEach((card, index) => {
-        const cardSpan = document.createElement("span");
-        cardSpan.textContent = cardToDisplay(card);
-        cardSpan.className = "card";
-        if (card.suit === "Hearts" || card.suit === "Diamonds"){
-            cardSpan.classList.add("red");
-        }
-        if (selectedCardIndices.includes(index)){
-            cardSpan.classList.add("selected");
-        }
-
-        if (i === game.currentPlayerIndex) {
-            
-            cardSpan.addEventListener("click", () => {
-                const idx = selectedCardIndices.indexOf(index);
-                if (idx > -1){
-                    selectedCardIndices.splice(idx, 1);
-                }
-                else{
-                    selectedCardIndices.push(index);
-                }
-                renderHands();
-            });
-
-            
-            cardSpan.draggable = true;
-            cardSpan.addEventListener("dragstart", () => {
-                draggedCardIndex = index;
-                draggedFromPlayerIndex = i;
-            });
-
-            
-            cardSpan.addEventListener("dragover", (e) => {
-                e.preventDefault(); 
-            });
-
-            // Drop to reorder
-            cardSpan.addEventListener("drop", () => {
-                if (draggedCardIndex === null || draggedFromPlayerIndex !== i){
-                    return;
-                }
-
-                const hand = player.hand;
-                const draggedCard = hand[draggedCardIndex];
-
-                hand.splice(draggedCardIndex, 1);
-
-                hand.splice(index, 0, draggedCard);
-
-                draggedCardIndex = null;
-                draggedFromPlayerIndex = null;
-
-                renderHands();
-            });
-        }
-
-        playerP.appendChild(cardSpan);
-    });
-
-
-        // Player melds (on table)
-        if (player.melds.length > 0) {
-            const meldDiv = document.createElement("div");
-            meldDiv.textContent = "Melds: ";
-
-            player.melds.forEach((meld, meldIndex) => {
-                const meldSpan = document.createElement("span");
-                meldSpan.textContent = "[" + meld.map(cardToDisplay).join(" ") + "]";
-                meldSpan.style.marginRight = "8px";
-
-                // Click meld to add ONE selected card from current player's hand
-                meldSpan.style.cursor = "pointer";
-                meldSpan.title = "Click to add your selected card to this meld";
-
-                meldSpan.addEventListener("click", () => {
-                    if (selectedCardIndices.length !== 1) {
-                    alert("Select EXACTLY 1 card to add.");
-                    return;
-                    }
-
-                    const handIndex = selectedCardIndices[0];
-                    const ok = game.addCardToMeld(i, meldIndex, handIndex);
-                    if (!ok) {
-                    alert("That card cannot be added to this meld.");
-                    return;
-                    }
-
-                    selectedCardIndices = [];
-                    renderHands();
-                });
-
-                meldDiv.appendChild(meldSpan);
-            });
-                    
-            playerP.appendChild(document.createElement("br"));
-            playerP.appendChild(meldDiv);
-        }
-
-
-        // Come Down button for current player
-        if (i === game.currentPlayerIndex) {
-            const comeDownBtn = document.createElement("button");
-            comeDownBtn.textContent = "Come Down";
-            comeDownBtn.disabled = !game.hasDrawn;
-            
-            comeDownBtn.addEventListener("click", () => {
-                
-                if (!game.hasDrawn) {
-                    alert("You must draw first before making a move.");
-                    return;
-                }
-                if (selectedCardIndices.length === 0) { 
-                    alert("Select cards to come down!");
-                    return;
-                }
-
-               const roundName = ROUND_RULES[game.currentRound][0].toLowerCase();
-
-                if (roundName === "blitz" && !game.roundOver) {
-                    if (!game.canComeDown(selectedCardIndices)) {
-                        alert("Blitz rule: select all cards, or all but ONE (leave 1 card to discard).");
-                        return;
-                    }
-                }
-
-                const p = game.getCurrP();
-                console.log("Selected indices:", selectedCardIndices);
-                console.log("Selected cards:", selectedCardIndices.map(i => p.hand[i]));
-                console.log("Selected pretty:", selectedCardIndices.map(i => cardToDisplay(p.hand[i])));
-                                    
-
-                const success = game.layDownMeld(selectedCardIndices);
-                if (success) {
-                    alert("Meld laid down!");
-                    selectedCardIndices = [];
-                    renderHands();
-                } else {
-                    alert("Invalid meld.");
-                }
-            });
-
-            playerP.appendChild(document.createElement("br"));
-            playerP.appendChild(comeDownBtn);
-
-            if (game.roundOver && i === game.currentPlayerIndex && i !== game.winnerIndex) {
-                const doneBtn = document.createElement("button");
-                doneBtn.textContent = "Done";
-
-                doneBtn.addEventListener("click", () => {
-                    selectedCardIndices = [];
-                    game.nextP();
-                    renderHands();
-                });
-
-                playerP.appendChild(doneBtn);  
-            }     
-        }
-
-
-        // Buy Top Discard button for other players
-        if (i !== game.currentPlayerIndex) {
-            playerP.appendChild(document.createElement("br"));
-
-            const buyBtn = document.createElement("button");
-            buyBtn.textContent = "Buy Top Discard";
-            buyBtn.disabled = !(game.topDiscardBuyable && i !== game.currentPlayerIndex);
-            buyBtn.addEventListener("click", () => {
-                buyTopDiscardForPlayer(i);
-            });
-
-            playerP.appendChild(buyBtn);
-        }
-
-
-    });
-    if (game.roundOver) {
-        turnP.textContent =`Blitz finished! Winner: ${game.players[game.winnerIndex].name}`;
-        setActionButtons(false);
-    } else {
-        turnP.textContent = `Current turn: ${game.getCurrP().name}`;
-        setActionButtons(true);
-    }
-    
-    // Show scores along with player names
-    game.players.forEach((player, i) => {
-        const playerP = playerElements[i];
-
-        const nameSpan = document.createElement("span");
-        nameSpan.textContent = `${player.name} (Score: ${player.score || 0})`;
-        playerP.appendChild(nameSpan);
-
-        playerP.appendChild(document.createElement("br")); // line break before hand
-    });
-
-    if (roundSelect) roundSelect.value = String(game.currentRound);
-
-
-
-
-    // Discard pile
-    const discardP = document.getElementById("discardPile");
-    discardP.innerHTML = "Discard pile: ";
-    if (game.discardPile.length > 0) {
-        const topCard = game.discardPile[game.discardPile.length - 1];
-        const cardSpan = document.createElement("span");
-        cardSpan.textContent = cardToDisplay(topCard);
-        cardSpan.className = "card";
-        if (topCard.suit === "Hearts" || topCard.suit === "Diamonds") cardSpan.style.color = "red";
-        discardP.appendChild(cardSpan);
-    }
-
-    if (!game.roundOver) {
-        turnP.textContent = `Current turn: ${game.getCurrP().name}`;
-    }
-
-    const roundTextP = document.getElementById("roundText");
-    if(roundTextP){
-        roundTextP.textContent = game.roundStarted
-            ? "Current Game Mode: " + ROUND_RULES[game.currentRound].join(", ")
-            : "Current Game Mode: Not started";
-    }
-
-    if (game.betweenRounds) {
-        startRoundBtn.disabled = false;
-        setActionButtons(false);   
-        turnP.textContent = `Round finished! Click Start Round for: ${ROUND_RULES[game.currentRound].join(", ")}`;
-    }
-
-}
-
-
-function populateRoundSelect() {
-  if (!roundSelect){
-    return;
-  }
-  roundSelect.innerHTML = "";
-
-  ROUND_RULES.forEach((rules, idx) => {
-    const opt = document.createElement("option");
-    opt.value = String(idx);
-    opt.textContent = `${idx + 1}: ${rules.join(" + ")}`;
-    roundSelect.appendChild(opt);
-  });
-
-  roundSelect.value = String(game.currentRound);
-}
-
-
-function attemptComeDown(playerIndex) {
-    const player = game.players[playerIndex];
-    
-    if (selectedCardIndex === null) {
-        alert("Select card(s) to lay down as a meld.");
-        return;
-    }
-
-    const cardIndices = [selectedCardIndex]; 
-    const success = game.layDownMeld(cardIndices);
-
-    if (success) {
-        selectedCardIndices = [];
-
-        if (game.roundOver) {
-            renderHands();
-            return;
-        }
-
-        game.nextP();
-        renderHands();
-    }
-    else {
-        alert("Invalid meld! Check the rules for this round.");
-    }
-}
-
-
-
-function buyDiscardForPlayer(playerIndex) {
-  if (game.currentPlayerIndex === playerIndex) {
-    alert("It's already your turn! Use Draw instead.");
-    return;
-  }
-
-  const result = game.buyDiscardOutOfTurn(playerIndex);
-  if (result) {
-    alert(`${game.players[playerIndex].name} bought ${cardToDisplay(result.boughtCard)} and drew a penalty card!`);
-    renderHands();
-  } else {
-    alert("Cannot buy discard!");
-  }
-}
-
-function setActionButtons(enabled) {
-    drawBtn.disabled = !enabled;
-    pickDiscardBtn.disabled = !enabled;
-    discardBtn.disabled = !enabled;
-}
-
-
-function buyTopDiscardForPlayer(playerIndex) {
-    const player = game.players[playerIndex];
-
-    
-    if (!game.topDiscardBuyable) {
-        alert("Cannot buy the discard yet!");
-        return;
-    }
-
-    if (playerIndex === game.currentPlayerIndex) {
-        alert("It's your turn! Draw instead.");
-        return;
-    }
-
-    if (game.discardPile.length === 0){
-        return;
-    }
-
-    const topCard = game.discardPile.pop();
-    player.hand.push(topCard);
-
-    const extraCard = game.deck.draw();
-    if (extraCard){
-        player.hand.push(extraCard);
-    }
-
-    game.topDiscardBuyable = false; 
-
-    renderHands();
-}
-
-drawBtn.addEventListener("click", () => {
-  if (game.hasDrawn) {
-    alert("You can only draw once per turn!");
-    return;
-  }
-  game.drawFromDeck();
-  renderHands();
+render();
+
+els.startRoundBtn.addEventListener("click", () => {
+  if (!game.startRound()) return;
+  selectedCardIndices = [];
+  render();
 });
 
-jumpRoundBtn?.addEventListener("click", () => {
-  const idx = Number(roundSelect.value);
-
-  if (Number.isNaN(idx) || idx < 0 || idx >= ROUND_RULES.length) return;
-
-  game.currentRound = idx;
-  game.roundStarted = false;
-  game.roundOver = false;
-  game.winnerIndex = null;
-  game.playersPlayedAfterBlitz?.clear?.();
-
-  startRoundBtn.disabled = false;
-  setActionButtons(false);
-
-  renderHands();
+els.drawBtn.addEventListener("click", () => {
+  if (!game.drawFromDeck()) {
+    showMessage("You can only draw once per turn, and the round must be started.");
+  }
+  selectedCardIndices = [];
+  render();
 });
 
-pickDiscardBtn.addEventListener("click", () => {
-  if (game.hasDrawn) {
-    alert("You can only draw once per turn!");
+els.pickDiscardBtn.addEventListener("click", () => {
+  if (!game.drawFromDiscard()) {
+    showMessage("You cannot pick up the discard right now.");
+  }
+  selectedCardIndices = [];
+  render();
+});
+
+els.comeDownBtn.addEventListener("click", () => {
+  if (selectedCardIndices.length === 0) {
+    showMessage("Select the cards you want to lay down first.");
     return;
   }
 
-  const card = game.drawfromDisc();
-  if (card) renderHands();
-  else alert("Discard pile is empty!");
-});
-
-
-discardBtn.addEventListener("click", () => {
-  if (selectedCardIndices.length !== 1) {
-    alert("Select EXACTLY 1 card to discard.");
+  if (!game.canComeDown(selectedCardIndices)) {
+    showMessage("Blitz rule: select every card, or all except one card to discard.");
     return;
   }
 
-  const index = selectedCardIndices[0];
-  const success = game.discardCard(index);
-
-  if (!success) {
-    alert("You must draw first, and you can only discard once per turn.");
+  if (!game.layDownMeld(selectedCardIndices)) {
+    showMessage("That selection is not a valid meld for this round.");
     return;
   }
 
   selectedCardIndices = [];
-    if (!game.betweenRounds) {
-        game.nextP();
-    }
-  renderHands();
+  render();
 });
 
+els.discardBtn.addEventListener("click", () => {
+  if (selectedCardIndices.length !== 1) {
+    showMessage("Select exactly one card to discard.");
+    return;
+  }
 
+  const didDiscard = game.discardCard(selectedCardIndices[0]);
+  if (!didDiscard) {
+    showMessage("You must draw first, then discard exactly once.");
+    return;
+  }
 
-startRoundBtn.addEventListener("click", () => {
-  game.startRound();
-  startRoundBtn.disabled = true;
-  drawBtn.disabled = false;
-  pickDiscardBtn.disabled = false;
-  discardBtn.disabled = false;
-  setActionButtons(true);
-
-  renderHands();
-  
+  selectedCardIndices = [];
+  if (game.roundStarted) game.nextP();
+  render();
 });
 
-resetBtn.addEventListener("click", () => {
-  //game = game;
-  game.deck.shuffle();
-  selectedCardIndex = null;
-  startRoundBtn.disabled = false;
-  drawBtn.disabled = true;
-  pickDiscardBtn.disabled = true;
-  discardBtn.disabled = true;
+els.jumpRoundBtn.addEventListener("click", () => {
+  const roundIndex = Number(els.roundSelect.value);
+  if (!game.jumpToRound(roundIndex)) {
+    showMessage("Choose a valid round.");
+  }
+  selectedCardIndices = [];
+  render();
+});
+
+els.resetBtn.addEventListener("click", () => {
+  game.resetGame(getNamesFromInput());
+  selectedCardIndices = [];
   populateRoundSelect();
-  renderHands();
+  render();
 });
 
-renderHands();
+els.playerNamesInput.addEventListener("change", () => {
+  if (!game.roundStarted) {
+    game.resetGame(getNamesFromInput());
+    selectedCardIndices = [];
+    render();
+  }
+});
+
+function render() {
+  renderGameStatus();
+  renderDiscardPile();
+  renderPlayers();
+  updateButtons();
+}
+
+function renderGameStatus() {
+  const rules = ROUND_RULES[game.currentRound];
+  const currentPlayer = game.getCurrP();
+
+  els.deckCount.textContent = String(game.deck.size());
+  els.roundSelect.value = String(Math.min(game.currentRound, ROUND_RULES.length - 1));
+
+  if (game.gameFinished) {
+    els.roundText.textContent = "Game complete";
+    els.turn.textContent = `Winner: ${getOverallWinnerText()}`;
+  } else if (game.roundStarted) {
+    els.roundText.textContent = `Round ${game.currentRound + 1}: ${rules.map(formatRule).join(" + ")}`;
+    els.turn.textContent = `Current turn: ${currentPlayer.name}`;
+  } else if (game.betweenRounds) {
+    els.roundText.textContent = `Next round: ${ROUND_RULES[game.currentRound].map(formatRule).join(" + ")}`;
+    els.turn.textContent = "Round finished";
+  } else {
+    els.roundText.textContent = `Current Game Mode: ${rules ? rules.map(formatRule).join(" + ") : "Not started"}`;
+    els.turn.textContent = "Current turn: Not started";
+  }
+
+  els.statusText.textContent = game.lastMessage;
+  els.buyHint.textContent = game.topDiscardBuyable
+    ? "Buying is available for non-current players."
+    : "Buying is not available right now.";
+}
+
+function renderDiscardPile() {
+  els.discardPile.innerHTML = "";
+
+  const topCard = game.discardPile.at(-1);
+  if (!topCard) {
+    els.discardPile.textContent = "Empty";
+    els.discardPile.className = "discard-card empty";
+    return;
+  }
+
+  const cardEl = createCardElement(topCard, { selectable: false });
+  els.discardPile.className = "discard-card";
+  els.discardPile.appendChild(cardEl);
+}
+
+function renderPlayers() {
+  els.players.innerHTML = "";
+
+  for (let playerIndex = 0; playerIndex < game.players.length; playerIndex++) {
+    const player = game.players[playerIndex];
+    const isCurrentPlayer = playerIndex === game.currentPlayerIndex && game.roundStarted;
+    const card = document.createElement("article");
+    card.className = `player-card${isCurrentPlayer ? " active" : ""}`;
+
+    const header = document.createElement("header");
+    header.className = "player-header";
+    header.innerHTML = `
+      <div>
+        <h3>${escapeHtml(player.name)}</h3>
+        <p>${player.hasComeDown ? "Came down" : remainingRuleText(player)}</p>
+      </div>
+      <strong>${player.score}</strong>
+    `;
+    card.appendChild(header);
+
+    const hand = document.createElement("div");
+    hand.className = "hand";
+    hand.ariaLabel = `${player.name}'s hand`;
+
+    player.hand.forEach((playerCard, cardIndex) => {
+      hand.appendChild(createCardElement(playerCard, {
+        selectable: isCurrentPlayer,
+        selected: isCurrentPlayer && selectedCardIndices.includes(cardIndex),
+        draggable: isCurrentPlayer,
+        onClick: () => toggleSelectedCard(cardIndex),
+        onDragStart: () => { draggedCardIndex = cardIndex; },
+        onDrop: () => reorderCurrentPlayerHand(cardIndex)
+      }));
+    });
+
+    card.appendChild(hand);
+
+    if (player.melds.length > 0) {
+      const melds = document.createElement("div");
+      melds.className = "melds";
+      const title = document.createElement("p");
+      title.textContent = "Melds on table";
+      melds.appendChild(title);
+
+      player.melds.forEach((meld, meldIndex) => {
+        const meldEl = document.createElement("button");
+        meldEl.type = "button";
+        meldEl.className = "meld";
+        meldEl.title = "Select one card from your hand, then click a meld to add it.";
+        meldEl.innerHTML = meld.map(cardItem => `<span class="mini-card${isRedCard(cardItem) ? " red" : ""}">${cardToDisplay(cardItem)}</span>`).join("");
+        meldEl.addEventListener("click", () => addSelectedCardToMeld(playerIndex, meldIndex));
+        melds.appendChild(meldEl);
+      });
+
+      card.appendChild(melds);
+    }
+
+    if (game.roundStarted && playerIndex !== game.currentPlayerIndex) {
+      const buyButton = document.createElement("button");
+      buyButton.type = "button";
+      buyButton.className = "buy-button";
+      buyButton.textContent = "Buy Top Discard";
+      buyButton.disabled = !game.topDiscardBuyable || game.discardPile.length === 0;
+      buyButton.addEventListener("click", () => buyTopDiscardForPlayer(playerIndex));
+      card.appendChild(buyButton);
+    }
+
+    els.players.appendChild(card);
+  }
+}
+
+function createCardElement(card, options = {}) {
+  const cardEl = document.createElement("button");
+  cardEl.type = "button";
+  cardEl.className = `card${isRedCard(card) ? " red" : ""}${options.selected ? " selected" : ""}`;
+  cardEl.textContent = cardToDisplay(card);
+  cardEl.title = card?.toString?.() ?? cardToDisplay(card);
+  cardEl.disabled = options.selectable === false;
+
+  if (options.selectable) {
+    cardEl.addEventListener("click", options.onClick);
+  }
+
+  if (options.draggable) {
+    cardEl.draggable = true;
+    cardEl.addEventListener("dragstart", options.onDragStart);
+    cardEl.addEventListener("dragover", event => event.preventDefault());
+    cardEl.addEventListener("drop", event => {
+      event.preventDefault();
+      options.onDrop();
+    });
+  }
+
+  return cardEl;
+}
+
+function toggleSelectedCard(cardIndex) {
+  const existingIndex = selectedCardIndices.indexOf(cardIndex);
+  if (existingIndex >= 0) selectedCardIndices.splice(existingIndex, 1);
+  else selectedCardIndices.push(cardIndex);
+  selectedCardIndices.sort((a, b) => a - b);
+  render();
+}
+
+function reorderCurrentPlayerHand(dropIndex) {
+  if (draggedCardIndex === null || draggedCardIndex === dropIndex) return;
+
+  const hand = game.getCurrP().hand;
+  const [movedCard] = hand.splice(draggedCardIndex, 1);
+  hand.splice(dropIndex, 0, movedCard);
+
+  draggedCardIndex = null;
+  selectedCardIndices = [];
+  render();
+}
+
+function addSelectedCardToMeld(playerIndex, meldIndex) {
+  if (selectedCardIndices.length !== 1) {
+    showMessage("Select exactly one card from the current player's hand first.");
+    return;
+  }
+
+  const didAdd = game.addCardToMeld(playerIndex, meldIndex, selectedCardIndices[0]);
+  if (!didAdd) {
+    showMessage("That card cannot be added to this meld. You must have come down first.");
+    return;
+  }
+
+  selectedCardIndices = [];
+  render();
+}
+
+function buyTopDiscardForPlayer(playerIndex) {
+  const result = game.buyDiscardOutOfTurn(playerIndex);
+  if (!result) {
+    showMessage("That player cannot buy the discard right now.");
+    return;
+  }
+
+  selectedCardIndices = [];
+  render();
+}
+
+function updateButtons() {
+  const roundActive = game.roundStarted && !game.gameFinished;
+  const canDraw = roundActive && !game.hasDrawn && !game.hasDiscarded;
+  const canActAfterDraw = roundActive && game.hasDrawn && !game.hasDiscarded;
+
+  els.startRoundBtn.disabled = game.roundStarted || game.gameFinished;
+  els.drawBtn.disabled = !canDraw;
+  els.pickDiscardBtn.disabled = !canDraw || game.discardPile.length === 0;
+  els.comeDownBtn.disabled = !canActAfterDraw || selectedCardIndices.length === 0;
+  els.discardBtn.disabled = !canActAfterDraw || selectedCardIndices.length !== 1;
+  els.jumpRoundBtn.disabled = game.roundStarted;
+  els.playerNamesInput.disabled = game.roundStarted;
+}
+
+function populateRoundSelect() {
+  els.roundSelect.innerHTML = "";
+  ROUND_RULES.forEach((rules, index) => {
+    const option = document.createElement("option");
+    option.value = String(index);
+    option.textContent = `${index + 1}. ${rules.map(formatRule).join(" + ")}`;
+    els.roundSelect.appendChild(option);
+  });
+}
+
+function getNamesFromInput() {
+  return els.playerNamesInput.value
+    .split(",")
+    .map(name => name.trim())
+    .filter(Boolean)
+    .slice(0, 4);
+}
+
+function remainingRuleText(player) {
+  if (game.roundStarted && player.remainingRules.length > 0) {
+    return `Needs: ${player.remainingRules.map(formatRule).join(" + ")}`;
+  }
+  return `${player.hand.length} cards`;
+}
+
+function getOverallWinnerText() {
+  const orderedPlayers = [...game.players].sort((a, b) => a.score - b.score);
+  const bestScore = orderedPlayers[0]?.score ?? 0;
+  const winners = orderedPlayers.filter(player => player.score === bestScore).map(player => player.name);
+  return `${winners.join(" & ")} (${bestScore} points)`;
+}
+
+function showMessage(message) {
+  game.lastMessage = message;
+  els.statusText.textContent = message;
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}

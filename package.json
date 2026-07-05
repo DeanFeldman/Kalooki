@@ -1,0 +1,13 @@
+{
+  "name": "kalooki-card-game",
+  "version": "1.0.0",
+  "description": "A browser-based Kalooki card game built with vanilla JavaScript modules.",
+  "type": "module",
+  "scripts": {
+    "start": "node server/server.js",
+    "test": "node tests/rules.test.js"
+  },
+  "keywords": ["kalooki", "cards", "javascript", "browser-game"],
+  "author": "",
+  "license": "MIT"
+}

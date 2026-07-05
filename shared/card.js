@@ -1,56 +1,50 @@
-//export key word allows other files to access this file
-
 export const SUITS = ["Hearts", "Diamonds", "Clubs", "Spades"];
-export const RANKS = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
+export const RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
 
-export class card{
-    constructor(suit, rank, isJoker = false){
-        this.isJoker = isJoker;
+export class Card {
+  constructor(suit, rank, isJoker = false) {
+    this.isJoker = isJoker;
 
-
-        if(isJoker){
-            this.suit = null;
-            this.rank = "JOKER";
-            this.value = 25;
-        }
-        else{
-            this.suit = suit;
-            this.rank = rank;
-            this.value = this.computeValue(rank);
-        }
+    if (isJoker) {
+      this.suit = null;
+      this.rank = "JOKER";
+      this.value = 25;
+    } else {
+      this.suit = suit;
+      this.rank = rank;
+      this.value = cardValueFromRank(rank);
     }
+  }
 
-    computeValue(rank){
-        if(rank === "A"){
-            return 11;
-        }
-        if(rank === "K" || rank === "J" || rank === "Q"){
-            return 10
-        }
-        return Number(rank);
-    }
+  toString() {
+    return this.isJoker ? "JOKER" : `${this.rank} of ${this.suit}`;
+  }
+}
 
-    toString(){
-        if(this.isJoker){
-            return "JOKER";
-        }
+// Backwards-compatible export for the original code style.
+export const card = Card;
 
-        return this.rank + " of " + this.suit;
-    }
-
+export function cardValueFromRank(rank) {
+  if (rank === "A") return 11;
+  if (["K", "Q", "J"].includes(rank)) return 10;
+  if (rank === "JOKER") return 25;
+  return Number(rank);
 }
 
 export function cardToDisplay(card) {
-    if(card.isJoker){
-        return "JOKER";
-    }
+  if (!card) return "";
+  if (card.isJoker || card.rank === "JOKER") return "★";
 
-    let suitSymbols = {
-        "Hearts": "♥",
-        "Diamonds": "♦",
-        "Clubs": "♣",
-        "Spades": "♠"
-    };
+  const suitSymbols = {
+    Hearts: "♥",
+    Diamonds: "♦",
+    Clubs: "♣",
+    Spades: "♠"
+  };
 
-    return card.rank + suitSymbols[card.suit];
+  return `${card.rank}${suitSymbols[card.suit] ?? ""}`;
+}
+
+export function isRedCard(card) {
+  return card && (card.suit === "Hearts" || card.suit === "Diamonds");
 }

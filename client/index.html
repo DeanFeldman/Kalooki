@@ -2,45 +2,67 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Kalooki</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="/client/style.css">
 </head>
 <body>
+  <main class="app-shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Card Game</p>
+        <h1>Kalooki</h1>
+        <p id="roundText" class="round-text">Current Game Mode: Not started</p>
+      </div>
+      <div class="hero-card">
+        <span>Deck</span>
+        <strong id="deckCount">0</strong>
+        <small>cards left</small>
+      </div>
+    </header>
 
-  <header>
-    <h1> Lets Play Kalooki!</h1>
-    <p id="roundText">Current Game Mode: </p>
+    <section class="panel setup-panel" aria-label="Game setup">
+      <label>
+        Player names
+        <input id="playerNamesInput" type="text" value="Player 1, Player 2" aria-label="Player names">
+      </label>
+      <label>
+        Round
+        <select id="roundSelect"></select>
+      </label>
+      <button id="jumpRoundButton" type="button">Jump to Round</button>
+      <button id="resetButton" type="button" class="danger">New Game</button>
+    </section>
 
-    <p class="buttons">
-      <button id="startRoundButton">Start Round</button>
-      <button id="drawButton">Draw from Deck</button>
-      <button id="pickDiscardButton">Pick Up Top Discard</button>
-      <button id="discardButton">Discard Card</button>
-      <button id="resetButton">Reset Game</button>
+    <section class="panel controls" aria-label="Game controls">
+      <button id="startRoundButton" type="button" class="primary">Start Round</button>
+      <button id="drawButton" type="button">Draw from Deck</button>
+      <button id="pickDiscardButton" type="button">Pick Up Discard</button>
+      <button id="discardButton" type="button">Discard Selected</button>
+      <button id="comeDownButton" type="button">Come Down / Lay Meld</button>
+    </section>
 
-      
-      <select id="roundSelect"></select>
-      <button id="jumpRoundButton">Jump to Round</button>
+    <section class="table-area">
+      <aside class="discard-zone" aria-label="Discard pile">
+        <p>Discard pile</p>
+        <div id="discardPile" class="discard-card">Empty</div>
+        <small id="buyHint">Players can buy this card when buying is available.</small>
+      </aside>
 
-      
-    </p>
+      <section class="status-zone" aria-live="polite">
+        <h2 id="turn">Current turn: Not started</h2>
+        <p id="statusText">Click Start Round to begin.</p>
+      </section>
+    </section>
 
-    
-  </header>
+    <section id="players" class="players-grid" aria-label="Players"></section>
 
-  <section id="piles">
-    <p id="discardPile">Discard pile: empty</p>
-  </section>
+    <section class="panel notes">
+      <h2>How to play this version</h2>
+      <p>Click cards to select them. Drag cards in your hand to reorder them. Draw first, then lay a meld or discard. After you have come down, click a table meld to add one selected card to it.</p>
+    </section>
+  </main>
 
-  <footer id="players">
-    <p id="player1" class="player"></p>
-    <p id="player2" class="player"></p>
-    <p id="player3" class="player"></p>
-    <p id="player4" class="player"></p>
-  </footer>
-
-  <p id="turn">Current turn: </p>
-
-  <script type="module" src="ui.js"></script>
+  <script type="module" src="/client/ui.js"></script>
 </body>
 </html>

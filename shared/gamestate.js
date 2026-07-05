@@ -1,494 +1,414 @@
 import { Deck } from "./deck.js";
+import { cardValueFromRank } from "./card.js";
 import { isValidMeld, ROUND_RULES } from "./rules.js";
-import { RANKS, SUITS } from "./card.js";
 
 export class GameState {
-  constructor(playerNames) {
-    this.players = playerNames.map(name => ({
-      name,
-      hand: [],
-      melds: [],
-      hasComeDown: false,
-      remainingRules: [] 
-    }));
+  constructor(playerNames = ["Player 1", "Player 2"]) {
+    this.playerNames = normalisePlayerNames(playerNames);
+    this.players = this.playerNames.map(createPlayer);
     this.deck = new Deck();
     this.discardPile = [];
     this.currentPlayerIndex = 0;
-    this.roundStarted = false;
     this.currentRound = 0;
+    this.roundStarted = false;
+    this.betweenRounds = false;
+    this.gameFinished = false;
     this.hasDrawn = false;
-    this.topDiscardBuyable = false;
-    this.roundOver = false;
-    this.winnerIndex = null;
-    this.scores = new Array(playerNames.length).fill(0);
-    this.roundOver = false;
-    this.winnerIndex = null;
-    this.playersPlayedAfterBlitz = new Set();
     this.hasDiscarded = false;
-
+    this.topDiscardBuyable = false;
+    this.lastMessage = "Click Start Round to begin.";
+    this.winnerIndex = null;
   }
 
-  startRound() {
-    this.deck.shuffle();
-    this.players.forEach(player => {
-      player.hand = [];
-      player.melds = [];
-      player.hasComeDown = false;
-      player.remainingRules = [];
-      
-      
-      ///
-      player.hasPlayedAfterBlitz = false;
-
-    });
-    this.discardPile = [];
-    this.currentPlayerIndex = 0;
-    this.roundStarted = true;
-    this.hasDrawn = false;
-    this.hasDiscarded = false;
-    this.topDiscardBuyable = false;
-    this.betweenRounds = false;
-
-
-    
-
-    // Deal 13 cards to each player
-    for (let i = 0; i < 13; i++) {
-      this.players.forEach(player => player.hand.push(this.deck.draw()));
-    }
-
-    const firstDiscard = this.deck.draw();
-    if (firstDiscard){
-      this.discardPile.push(firstDiscard);
-    }
+  get currentRules() {
+    return ROUND_RULES[this.currentRound] ?? [];
   }
 
   getCurrP() {
     return this.players[this.currentPlayerIndex];
   }
 
-  nextP() {
-      // ALWAYS reset turn state first
-      this.hasDrawn = false;
-      this.hasDiscarded = false;
+  startRound() {
+    if (this.currentRound >= ROUND_RULES.length) {
+      this.gameFinished = true;
+      this.roundStarted = false;
+      this.lastMessage = "Game complete.";
+      return false;
+    }
 
-      if (this.roundOver) {
-          this.playersPlayedAfterBlitz.add(this.currentPlayerIndex);
+    this.deck = new Deck();
+    this.discardPile = [];
+    this.currentPlayerIndex = 0;
+    this.roundStarted = true;
+    this.betweenRounds = false;
+    this.gameFinished = false;
+    this.hasDrawn = false;
+    this.hasDiscarded = false;
+    this.topDiscardBuyable = true;
+    this.winnerIndex = null;
 
-          const allDone = this.players.every((_, i) =>
-              i === this.winnerIndex || this.playersPlayedAfterBlitz.has(i)
-          );
+    for (const player of this.players) {
+      player.hand = [];
+      player.melds = [];
+      player.hasComeDown = false;
+      player.remainingRules = [...this.currentRules];
+    }
 
-          if (allDone) {
-              this.endRound();
-              return;
-          }
+    for (let i = 0; i < 13; i++) {
+      for (const player of this.players) {
+        const card = this.deck.draw();
+        if (card) player.hand.push(card);
       }
+    }
 
-      this.currentPlayerIndex =
-          (this.currentPlayerIndex + 1) % this.players.length;
+    const firstDiscard = this.deck.draw();
+    if (firstDiscard) this.discardPile.push(firstDiscard);
+
+    this.lastMessage = `Round ${this.currentRound + 1} started: ${this.currentRules.join(" + ")}.`;
+    return true;
   }
 
+  resetGame(playerNames = this.players.map(player => player.name)) {
+    this.playerNames = normalisePlayerNames(playerNames);
+    this.players = this.playerNames.map(createPlayer);
+    this.deck = new Deck();
+    this.discardPile = [];
+    this.currentPlayerIndex = 0;
+    this.currentRound = 0;
+    this.roundStarted = false;
+    this.betweenRounds = false;
+    this.gameFinished = false;
+    this.hasDrawn = false;
+    this.hasDiscarded = false;
+    this.topDiscardBuyable = false;
+    this.winnerIndex = null;
+    this.lastMessage = "New game created. Click Start Round to begin.";
+  }
 
+  jumpToRound(roundIndex) {
+    if (!Number.isInteger(roundIndex) || roundIndex < 0 || roundIndex >= ROUND_RULES.length) return false;
+    this.currentRound = roundIndex;
+    this.roundStarted = false;
+    this.betweenRounds = false;
+    this.gameFinished = false;
+    this.hasDrawn = false;
+    this.hasDiscarded = false;
+    this.topDiscardBuyable = false;
+    this.winnerIndex = null;
+
+    for (const player of this.players) {
+      player.hand = [];
+      player.melds = [];
+      player.hasComeDown = false;
+      player.remainingRules = [...this.currentRules];
+    }
+
+    this.discardPile = [];
+    this.deck = new Deck();
+    this.lastMessage = `Jumped to round ${this.currentRound + 1}. Click Start Round.`;
+    return true;
+  }
 
   drawFromDeck() {
-    if (this.hasDrawn){
-        return null;
-    }
+    if (!this.canDraw()) return null;
+    this.refillDeckIfNeeded();
+
     const card = this.deck.draw();
-    if (card) {
-      this.getCurrP().hand.push(card);
-      this.hasDrawn = true;
-      this.topDiscardBuyable = true; 
-    }
+    if (!card) return null;
+
+    this.getCurrP().hand.push(card);
+    this.hasDrawn = true;
+    this.topDiscardBuyable = true;
+    this.lastMessage = `${this.getCurrP().name} drew from the deck.`;
     return card;
   }
 
   drawfromDisc() {
-    if (this.hasDrawn || this.discardPile.length === 0){
-        return null;
-    }
+    return this.drawFromDiscard();
+  }
+
+  drawFromDiscard() {
+    if (!this.canDraw() || this.discardPile.length === 0) return null;
+
     const card = this.discardPile.pop();
     this.getCurrP().hand.push(card);
     this.hasDrawn = true;
-    this.topDiscardBuyable = true;
+    this.topDiscardBuyable = false;
+    this.lastMessage = `${this.getCurrP().name} picked up the top discard.`;
     return card;
   }
 
-discardCard(index) {
-  const player = this.getCurrP();
-  const currentRule = ROUND_RULES[this.currentRound][0];
-
-  if (!this.hasDrawn){
-    return false;
+  canDraw() {
+    return this.roundStarted && !this.gameFinished && !this.hasDrawn && !this.hasDiscarded;
   }
 
-  if (this.hasDiscarded){
-    return false;
-  }
-  
-  if (ROUND_RULES[this.currentRound].length > 1 && player.remainingRules.length > 0) {
-    return false;
-  }
+  discardCard(index) {
+    if (!this.roundStarted || !this.hasDrawn || this.hasDiscarded) return false;
 
-  if (index < 0 || index >= player.hand.length){
-    return false;
-  }
-
-  //   if (player.remainingRules && player.remainingRules.length > 0) {
-  //   return false;
-  // }
-  
-  const [card] = player.hand.splice(index, 1);
-  this.discardPile.push(card);
-  this.topDiscardBuyable = true;
-
-  this.hasDiscarded = true;
-  const ruleName = currentRule.toLowerCase();
-
-
-  if (player.hasComeDown && player.hand.length === 0) {
-    this.roundOver = true;
-    this.winnerIndex = this.currentPlayerIndex;
-
-    if (ruleName !== "blitz") {
-      this.endRound();     
-    }
-    
-  }
-
-  return true;
-}
-
-
-
-
-canComeDown(cardIndices) {
-  if (!this.roundStarted || !this.hasDrawn || this.hasDiscarded) {
-    return false;
-  }
-  const player = this.getCurrP();
-
-  //blitz
-  const n = player.hand.length;
-  const k = Array.isArray(cardIndices) ? cardIndices.length : 0;
-
-  return (k === n) || (k === n - 1);
-}
-
-layDownMeld(cardIndices) {
     const player = this.getCurrP();
-    if (!this.roundStarted){
-      return false;
-    }
-    if (!this.hasDrawn){
-      return false;
-    }
-    if (this.hasDiscarded){
-      return false;
-    }
-    if (!Array.isArray(cardIndices) || cardIndices.length === 0){
-      return false;
+    if (!Number.isInteger(index) || index < 0 || index >= player.hand.length) return false;
+
+    const [card] = player.hand.splice(index, 1);
+    this.discardPile.push(card);
+    this.hasDiscarded = true;
+    this.topDiscardBuyable = true;
+    this.lastMessage = `${player.name} discarded a card.`;
+
+    if (player.hasComeDown && player.hand.length === 0) {
+      this.finishRound(this.currentPlayerIndex);
     }
 
-    const meldCards = cardIndices.map(i => player.hand[i]);
-    const currentRule = ROUND_RULES[this.currentRound][0];   
-    
-    if (currentRule.toLowerCase() === "blitz") {
-      const possibleMelds = splitIntoMelds(meldCards, isValidMeld);
-      if (!possibleMelds || possibleMelds.length === 0){
-        return false;
-      }
+    return true;
+  }
 
-      // Remove selected cards + add melds
-      player.hand = player.hand.filter((_, i) => !cardIndices.includes(i));
+  canComeDown(cardIndices) {
+    if (!this.roundStarted || !this.hasDrawn || this.hasDiscarded) return false;
+
+    const currentRule = this.currentRules[0]?.toLowerCase();
+    if (currentRule !== "blitz") return true;
+
+    const selectedCount = Array.isArray(cardIndices) ? new Set(cardIndices).size : 0;
+    const handCount = this.getCurrP().hand.length;
+    return selectedCount === handCount || selectedCount === handCount - 1;
+  }
+
+  layDownMeld(cardIndices) {
+    if (!this.roundStarted || !this.hasDrawn || this.hasDiscarded) return false;
+    if (!Array.isArray(cardIndices) || cardIndices.length === 0) return false;
+
+    const player = this.getCurrP();
+    const cleanIndices = normaliseIndices(cardIndices, player.hand.length);
+    if (cleanIndices.length === 0) return false;
+
+    const selectedCards = cleanIndices.map(index => player.hand[index]);
+    const currentRule = this.currentRules[0]?.toLowerCase();
+
+    if (currentRule === "blitz") {
+      if (!this.canComeDown(cleanIndices)) return false;
+
+      const possibleMelds = splitIntoMelds(selectedCards);
+      if (!possibleMelds) return false;
+
+      removeCardsAtIndices(player.hand, cleanIndices);
       player.melds.push(...possibleMelds);
       player.hasComeDown = true;
+      player.remainingRules = [];
+      this.lastMessage = `${player.name} came down in Blitz.`;
 
-      // ONLY the winner triggers Blitz end when they empty their hand during normal play
-      if (!this.roundOver && player.hand.length === 0) {
-        this.roundOver = true;
-        this.winnerIndex = this.currentPlayerIndex;
-      }
-
+      if (player.hand.length === 0) this.finishRound(this.currentPlayerIndex);
       return true;
     }
-    else {
-      let ruleToCheck = player.remainingRules.length > 0 ? player.remainingRules[0] : "any";
 
-     
-      // if (ruleToCheck.toLowerCase() === "run3" && player.hasComeDown) {
-      //   ruleToCheck = "any";
-      // }
+    const ruleToCheck = player.hasComeDown || player.remainingRules.length === 0
+      ? "any"
+      : player.remainingRules[0];
 
-      if (!isValidMeld(meldCards, ruleToCheck)) {
-        return false;
-      }
+    if (!isValidMeld(selectedCards, ruleToCheck)) return false;
 
-      player.hand = player.hand.filter((_, i) => !cardIndices.includes(i));
-      player.melds.push(meldCards);
+    removeCardsAtIndices(player.hand, cleanIndices);
+    player.melds.push(sortMeldForDisplay(selectedCards));
 
-      if (player.remainingRules.length > 0) {
-        player.remainingRules.shift();
-      }
-
-      if (player.remainingRules.length === 0) {
-        player.hasComeDown = true;
-      }
-
-      return true;
-    }
-}
-
-addCardToMeld(targetPlayerIndex, targetMeldIndex, cardHandIndex) {
-
-  if (!this.roundStarted || !this.hasDrawn || this.hasDiscarded) {
-    return false;
-  }
-
-  const curr = this.getCurrP();
-  const targetPlayer = this.players[targetPlayerIndex];
-  if (!targetPlayer){
-    return false;
-  }
-
-  const currentRule = ROUND_RULES[this.currentRound][0];
-  if (currentRule.toLowerCase() === "run3" && !curr.hasComeDown){
-    return false;
-  }
-
-  const meld = targetPlayer.melds[targetMeldIndex];
-  if (!meld){
-    return false;
-  }
-
-  const card = curr.hand[cardHandIndex];
-  if (!card) {
-    return false;
-  }
-
-  const frontTry = [card, ...meld];
-  const backTry = [...meld, card];
-
-  if (isValidMeld(frontTry, "any")) {
-    targetPlayer.melds[targetMeldIndex] = frontTry;
-  } else if (isValidMeld(backTry, "any")) {
-    targetPlayer.melds[targetMeldIndex] = backTry;
-  } else {
-    return false;
-  }
-
-  curr.hand.splice(cardHandIndex, 1);
-  return true;
-}
-
-
-
-  buyDiscard(playerIndex) {
-    if (this.discardPile.length === 0 || !this.hasDrawn){
-        return null;
+    if (!player.hasComeDown && player.remainingRules.length > 0) {
+      player.remainingRules.shift();
+      if (player.remainingRules.length === 0) player.hasComeDown = true;
     }
 
-    const card = this.discardPile.pop();
-    this.players[playerIndex].hand.push(card);
+    this.lastMessage = `${player.name} laid down a valid ${ruleToCheck} meld.`;
+    if (player.hasComeDown && player.hand.length === 0) this.finishRound(this.currentPlayerIndex);
+    return true;
+  }
 
-    if (playerIndex === this.currentPlayerIndex){
-        this.hasDrawn = true;
+  addCardToMeld(targetPlayerIndex, targetMeldIndex, cardHandIndex) {
+    if (!this.roundStarted || !this.hasDrawn || this.hasDiscarded) return false;
+
+    const currentPlayer = this.getCurrP();
+    if (!currentPlayer.hasComeDown) return false;
+
+    const targetPlayer = this.players[targetPlayerIndex];
+    const targetMeld = targetPlayer?.melds?.[targetMeldIndex];
+    const card = currentPlayer.hand[cardHandIndex];
+    if (!targetPlayer || !targetMeld || !card) return false;
+
+    const frontTry = [card, ...targetMeld];
+    const backTry = [...targetMeld, card];
+    const sortedTry = sortMeldForDisplay([...targetMeld, card]);
+
+    if (isValidMeld(frontTry, "any")) {
+      targetPlayer.melds[targetMeldIndex] = sortMeldForDisplay(frontTry);
+    } else if (isValidMeld(backTry, "any")) {
+      targetPlayer.melds[targetMeldIndex] = sortMeldForDisplay(backTry);
+    } else if (isValidMeld(sortedTry, "any")) {
+      targetPlayer.melds[targetMeldIndex] = sortedTry;
+    } else {
+      return false;
     }
 
-    return card;
+    currentPlayer.hand.splice(cardHandIndex, 1);
+    this.lastMessage = `${currentPlayer.name} added a card to a meld.`;
+
+    if (currentPlayer.hand.length === 0) this.finishRound(this.currentPlayerIndex);
+    return true;
   }
 
   buyDiscardOutOfTurn(playerIndex) {
-    if (this.discardPile.length === 0){
-        return null;
-    }
+    if (!this.roundStarted || !this.topDiscardBuyable || this.discardPile.length === 0) return null;
+    if (playerIndex === this.currentPlayerIndex) return null;
 
-    const topDiscard = this.discardPile.pop();
-    this.players[playerIndex].hand.push(topDiscard);
+    const player = this.players[playerIndex];
+    if (!player) return null;
 
-    // Draw penalty card
+    const boughtCard = this.discardPile.pop();
+    player.hand.push(boughtCard);
+
+    this.refillDeckIfNeeded();
     const penaltyCard = this.deck.draw();
-    if (penaltyCard){
-        this.players[playerIndex].hand.push(penaltyCard);
-    }
+    if (penaltyCard) player.hand.push(penaltyCard);
 
-    return { boughtCard: topDiscard, penaltyCard };
+    this.topDiscardBuyable = false;
+    this.lastMessage = `${player.name} bought the discard and took a penalty card.`;
+    return { boughtCard, penaltyCard };
+  }
+
+  nextP() {
+    if (!this.roundStarted || this.betweenRounds || this.gameFinished) return;
+
+    this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.players.length;
+    this.hasDrawn = false;
+    this.hasDiscarded = false;
+    this.lastMessage = `${this.getCurrP().name}'s turn.`;
   }
 
   cardValue(card) {
-    if (card.rank === "A"){
-      return 11;
-    }
-    if (["K", "Q", "J"].includes(card.rank)){
-      return 10;
-    }
-    if(["JOKER"].includes(card.rank)){
-      return 25;
-    }
-    return Number(card.rank);
+    return cardValueFromRank(card?.rank);
   }
 
+  finishRound(winnerIndex) {
+    this.winnerIndex = winnerIndex;
+    const winnerName = this.players[winnerIndex]?.name ?? "Unknown";
 
-  endRound() {
+    for (let i = 0; i < this.players.length; i++) {
+      if (i === winnerIndex) continue;
+      this.players[i].score += this.players[i].hand.reduce((sum, card) => sum + this.cardValue(card), 0);
+    }
 
-    this.players.forEach((player, i) => {
-      if (i === this.winnerIndex) return;
-
-      const points = player.hand.reduce((sum, card) => {
-        if (card.rank === "A") return sum + 11;
-        if (["K", "Q", "J"].includes(card.rank)) return sum + 10;
-        if (card.rank === "JOKER") return sum + 25;
-        return sum + Number(card.rank);
-      }, 0);
-
-      player.score = (player.score || 0) + points;
-    });
-
-    this.currentRound++;
-
-    this.roundOver = false;
-    this.winnerIndex = null;
-    this.playersPlayedAfterBlitz.clear();
-
-    this.roundStarted = false;     
+    this.roundStarted = false;
+    this.betweenRounds = true;
     this.hasDrawn = false;
     this.hasDiscarded = false;
     this.topDiscardBuyable = false;
+    this.currentRound += 1;
 
-    this.betweenRounds = true;      
-  }
-
-}
-
-
-function isBlitzSetWithJokers(cards) {
-  if (cards.length < 3){
-    return false;
-  }
-
-  const jokers = cards.filter(c => c.rank === "JOKER" || c.isJoker);
-  const normal = cards.filter(c => !(c.rank === "JOKER" || c.isJoker));
-
-  if (normal.length === 0){
-    return false;
-  }
-
-  const rank = normal[0].rank;
-  if (!normal.every(c => c.rank === rank)){
-    return false;
-  }
-
-  const suits = new Set();
-  for (const c of normal) {
-    if (suits.has(c.suit)){
-      return false;
+    if (this.currentRound >= ROUND_RULES.length) {
+      this.gameFinished = true;
+      this.betweenRounds = false;
+      this.lastMessage = `${winnerName} finished the final round. Game complete.`;
+    } else {
+      this.lastMessage = `${winnerName} won the round. Start the next round when ready.`;
     }
-    suits.add(c.suit);
   }
 
-  return true;
+  refillDeckIfNeeded() {
+    if (this.deck.size() > 0 || this.discardPile.length <= 1) return;
+
+    const topDiscard = this.discardPile.pop();
+    this.deck.addCards(this.discardPile.splice(0));
+    this.discardPile.push(topDiscard);
+  }
 }
 
-function isValidBlitzMeld(cards, isValidMeldFn) {
-  
-  return isValidMeldFn(cards, "blitz") || isBlitzSetWithJokers(cards);
+function createPlayer(name) {
+  return {
+    name,
+    hand: [],
+    melds: [],
+    hasComeDown: false,
+    remainingRules: [],
+    score: 0
+  };
 }
 
-function combinations(arr, k, start = 0, prefix = [], out = []) {
+function normalisePlayerNames(playerNames) {
+  const names = playerNames
+    .map(name => String(name).trim())
+    .filter(Boolean)
+    .slice(0, 4);
+
+  while (names.length < 2) names.push(`Player ${names.length + 1}`);
+  return names;
+}
+
+function normaliseIndices(indices, handLength) {
+  return [...new Set(indices)]
+    .filter(index => Number.isInteger(index) && index >= 0 && index < handLength)
+    .sort((a, b) => a - b);
+}
+
+function removeCardsAtIndices(hand, indices) {
+  for (const index of [...indices].sort((a, b) => b - a)) {
+    hand.splice(index, 1);
+  }
+}
+
+function splitIntoMelds(cards) {
+  const remaining = [...cards];
+  const result = solveMeldSplit(remaining);
+  return result && result.length > 0 ? result.map(sortMeldForDisplay) : null;
+}
+
+function solveMeldSplit(remaining) {
+  if (remaining.length === 0) return [];
+
+  const candidates = findCandidateMeldsContainingFirstCard(remaining);
+
+  for (const candidate of candidates) {
+    const rest = removeCardReferences(remaining, candidate);
+    const tail = solveMeldSplit(rest);
+    if (tail) return [candidate, ...tail];
+  }
+
+  return null;
+}
+
+function findCandidateMeldsContainingFirstCard(cards) {
+  const [anchor, ...rest] = cards;
+  const candidates = [];
+
+  for (let size = Math.min(cards.length, 13); size >= 3; size--) {
+    for (const combo of combinations(rest, size - 1)) {
+      const candidate = [anchor, ...combo];
+      if (isValidMeld(candidate, "any")) candidates.push(candidate);
+    }
+  }
+
+  return candidates.sort((a, b) => b.length - a.length);
+}
+
+function combinations(arr, k, start = 0, prefix = [], output = []) {
   if (prefix.length === k) {
-    out.push(prefix.slice());
-    return out;
+    output.push([...prefix]);
+    return output;
   }
+
   for (let i = start; i < arr.length; i++) {
     prefix.push(arr[i]);
-    combinations(arr, k, i + 1, prefix, out);
+    combinations(arr, k, i + 1, prefix, output);
     prefix.pop();
   }
-  return out;
-  
+
+  return output;
 }
 
+function removeCardReferences(cards, cardsToRemove) {
+  const removeSet = new Set(cardsToRemove);
+  return cards.filter(card => !removeSet.has(card));
+}
 
-function splitIntoMelds(cards, isValidMeldFn) {
-  const pool = cards.slice();
-
-  pool.sort((a, b) => {
-    const aj = (a.rank === "JOKER" || a.isJoker) ? 1 : 0;
-    const bj = (b.rank === "JOKER" || b.isJoker) ? 1 : 0;
-    return aj - bj;
+function sortMeldForDisplay(cards) {
+  const rankOrder = { A: 1, J: 11, Q: 12, K: 13, JOKER: 99 };
+  return [...cards].sort((a, b) => {
+    const aRank = rankOrder[a.rank] ?? Number(a.rank);
+    const bRank = rankOrder[b.rank] ?? Number(b.rank);
+    if (a.suit === b.suit) return aRank - bRank;
+    return String(a.suit).localeCompare(String(b.suit));
   });
-
-  const startTime = performance.now();
-  const MAX_MS = 80;          // keep UI responsive
-  const MAX_CANDIDATES = 300; // cap branching
-
-  function timedOut() {
-    return (performance.now() - startTime) > MAX_MS;
-  }
-
-  function solve(remaining) {
-    if (timedOut()){
-      return null;
-    }
-    if (remaining.length === 0){
-      return [];
-    }
-    const anchor = remaining[0];
-    const rest = remaining.slice(1);
-
-    const candidates = [];
-
-    // Sets (3-4) first
-    for (const size of [3, 4]) {
-      if (remaining.length >= size) {
-        const combs = combinations(rest, size - 1);
-        for (const c of combs) {
-          if (timedOut()){
-            return null;
-          }
-          const meld = [anchor, ...c];
-          if (isValidBlitzMeld(meld, isValidMeldFn)) candidates.push(meld);
-          if (candidates.length >= MAX_CANDIDATES){
-            break;
-          }
-        }
-      }
-      if (candidates.length >= MAX_CANDIDATES){
-        break;
-      }
-    }
-
-    // Runs (3..remaining.length) but cap hard
-    for (let size = 3; size <= remaining.length && candidates.length < MAX_CANDIDATES; size++) {
-      const combs = combinations(rest, size - 1);
-      for (const c of combs) {
-        if (timedOut()){
-          return null;
-        }
-        const meld = [anchor, ...c];
-        if (isValidBlitzMeld(meld, isValidMeldFn)) candidates.push(meld);
-        if (candidates.length >= MAX_CANDIDATES){
-          break;
-        }
-      }
-    }
-
-    candidates.sort((a, b) => b.length - a.length);
-
-    for (const meld of candidates) {
-      if (timedOut()){
-        return null;
-      }
-      const nextRemaining = remaining.filter(card => !meld.includes(card));
-      const tail = solve(nextRemaining);
-      if (tail) return [meld, ...tail];
-    }
-
-    return null;
-  }
-
-  return solve(pool);
 }
-
-

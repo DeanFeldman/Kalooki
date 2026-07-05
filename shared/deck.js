@@ -1,48 +1,47 @@
-import {card, SUITS,RANKS} from "./card.js";
+import { Card, SUITS, RANKS } from "./card.js";
 
 export class Deck {
-    constructor(){
-        this.cards = [];
-        this.buildDeck();
-        this.shuffle();
-    }
+  constructor(deckCount = 2, jokerCount = 4) {
+    this.deckCount = deckCount;
+    this.jokerCount = jokerCount;
+    this.cards = [];
+    this.buildDeck();
+    this.shuffle();
+  }
 
-    buildDeck(){
-        //standard deck
-        for(let d = 0; d < 2; d++){                     //d = deck
-            for(let s = 0; s <SUITS.length; s++){       //s = suit
-                for(let r = 0; r < RANKS.length; r++){  //r = rank
-                    const suit = SUITS[s];
-                    const rank = RANKS[r];
+  buildDeck() {
+    this.cards = [];
 
-                    this.cards.push(new card(suit ,rank));
-
-                }
-            }
+    for (let d = 0; d < this.deckCount; d++) {
+      for (const suit of SUITS) {
+        for (const rank of RANKS) {
+          this.cards.push(new Card(suit, rank));
         }
-
-        //add 4 jokers
-        for(let j = 0; j < 4; j++){
-            this.cards.push(new card(null, null ,true));
-        }
+      }
     }
 
-    shuffle(){
-        for(let i = this.cards.length -1; i>0; i--){
-            const j = Math.floor(Math.random()*(i+1));
-            const temp = this.cards[i];
-            this.cards[i] = this.cards[j];
-            this.cards[j] = temp;
-        }
+    for (let j = 0; j < this.jokerCount; j++) {
+      this.cards.push(new Card(null, null, true));
     }
+  }
 
-    draw(){
-        return this.cards.pop();
+  shuffle() {
+    for (let i = this.cards.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [this.cards[i], this.cards[j]] = [this.cards[j], this.cards[i]];
     }
+  }
 
-    size(){
-        return this.cards.length;
-    }
+  draw() {
+    return this.cards.pop() ?? null;
+  }
 
+  addCards(cards) {
+    this.cards.push(...cards);
+    this.shuffle();
+  }
 
+  size() {
+    return this.cards.length;
+  }
 }

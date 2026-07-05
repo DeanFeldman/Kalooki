@@ -1,60 +1,72 @@
-# Kalooki
+# Kalooki Phase 2 - Online Room Prototype
 
-A browser-based Kalooki card game built with vanilla JavaScript modules.
+This version moves the game from a single-browser prototype to a server-owned online room prototype.
 
-## What was fixed
+## What is new in Phase 2
 
-- Added a working Node server so ES module imports load correctly.
-- Added `package.json` with `npm start` and `npm test` scripts.
-- Rebuilt the UI so player areas, scores, current round, deck count, discard pile, and turn status are clear.
-- Fixed reset so it actually starts a fresh game.
-- Fixed round setup so a new deck is created each round.
-- Fixed multi-rule rounds so players must complete the required melds before playing freely.
-- Fixed end-of-round scoring and final winner display.
-- Added simple rule tests for runs, sets, jokers, and round flow.
+- A real Node server controls the rooms and game state.
+- Browsers connect to the server with WebSockets.
+- Players can create a room, share a room code, and join from another browser/device.
+- Each player only sees their own hand.
+- Other players' hands are shown as card backs.
+- The host can start rounds, reset the game, and jump rounds.
+- The server validates turns so non-current players cannot draw/discard/lay melds.
+- Out-of-turn buying is supported for the player who clicks the buy button.
+- Rejoin support works from the same browser using localStorage.
 
-## How to run
-
-1. Open a terminal in this folder.
-2. Run:
+## How to run locally
 
 ```bash
 npm start
 ```
 
-3. Open this address in your browser:
+Then open:
 
 ```text
 http://localhost:3000
 ```
 
-Do not open `client/index.html` directly by double-clicking it. Browser security blocks JavaScript module imports from local files, so the project needs the included local server.
+To test with two players on one laptop:
 
-## How to test
+1. Open `http://localhost:3000` in one browser.
+2. Create a room.
+3. Copy the invite link or room code.
+4. Open a different browser/incognito window.
+5. Join using the room code.
+6. Start the round from the host browser.
+
+## Test command
 
 ```bash
 npm test
 ```
 
-## How to play
+## Current limitations
 
-- Enter 2 to 4 player names separated by commas.
-- Click **Start Round**.
-- On your turn, draw from the deck or pick up the discard pile.
-- Select cards by clicking them.
-- Click **Come Down / Lay Meld** to play the selected meld.
-- Click **Discard Selected** after selecting exactly one card.
-- Once you have come down, you may add one selected card to an existing meld by clicking that meld.
-- Non-current players can buy the top discard when buying is available. They receive the discard and one penalty card.
+This is still a prototype.
 
-## Rounds
+- Rooms are stored in server memory only.
+- If the server restarts, all rooms disappear.
+- There are no accounts or passwords yet.
+- There is no database yet.
+- Joining after a game has already started is blocked unless the player is rejoining their saved seat.
+- The WebSocket server is a minimal built-in implementation so the project has no install dependencies.
 
-1. Blitz
-2. Run of 3
-3. Set of 3
-4. Run of 3 + Set of 3
-5. Run of 4
-6. Set of 4
-7. Run of 5
+## Next recommended step
 
-Lowest score wins after the final round.
+Deploy this server to a public host. After that, add persistent storage so rooms and scores survive server restarts.
+
+## Why Start Round may not work
+
+For Phase 2, a round can only start after you are inside a room and at least two players have joined.
+
+Correct test flow:
+
+1. Open `http://localhost:3000`.
+2. Click **Create Room**. Do not type your own room code for this step; the app generates one.
+3. Copy the room code or invite link.
+4. Open a second browser/incognito window.
+5. Join using that generated room code.
+6. In the host window, click **Start Round**.
+
+If the page says it is still connecting, refresh once and make sure the terminal running `npm start` is still open.

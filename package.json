@@ -1,13 +1,17 @@
 {
   "name": "kalooki-card-game",
-  "version": "1.0.0",
-  "description": "A browser-based Kalooki card game built with vanilla JavaScript modules.",
+  "version": "2.0.0",
+  "description": "Room-based online Kalooki prototype with a Node server and browser WebSocket client.",
   "type": "module",
   "scripts": {
     "start": "node server/server.js",
+    "dev": "node server/server.js",
     "test": "node tests/rules.test.js"
   },
-  "keywords": ["kalooki", "cards", "javascript", "browser-game"],
+  "keywords": ["kalooki", "cards", "javascript", "browser-game", "websocket", "multiplayer"],
   "author": "",
-  "license": "MIT"
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  }
 }

@@ -1,8 +1,9 @@
 :root {
   --felt: #114b39;
   --felt-light: #17634c;
+  --felt-dark: #08281f;
   --ink: #10231d;
-  --muted: #6c7a76;
+  --muted: #d7e5df;
   --panel: #f7f1e6;
   --panel-deep: #e7d8bd;
   --gold: #f4c542;
@@ -21,7 +22,7 @@ body {
   font-family: Inter, "Segoe UI", Arial, sans-serif;
   background:
     radial-gradient(circle at top left, rgba(255, 255, 255, 0.16), transparent 34rem),
-    linear-gradient(135deg, var(--felt), var(--felt-light));
+    linear-gradient(135deg, var(--felt-dark), var(--felt), var(--felt-light));
   color: var(--white);
 }
 
@@ -37,7 +38,7 @@ button {
   padding: 0.75rem 1rem;
   background: var(--white);
   color: var(--ink);
-  font-weight: 700;
+  font-weight: 800;
   cursor: pointer;
   transition: transform 160ms ease, opacity 160ms ease, box-shadow 160ms ease;
 }
@@ -58,8 +59,12 @@ select {
   border: 2px solid transparent;
   border-radius: 0.9rem;
   padding: 0.75rem 0.9rem;
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.94);
   color: var(--ink);
+}
+
+.hidden {
+  display: none !important;
 }
 
 .app-shell {
@@ -79,7 +84,7 @@ select {
 .eyebrow {
   margin: 0 0 0.2rem;
   color: var(--gold);
-  font-weight: 800;
+  font-weight: 900;
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
@@ -122,30 +127,66 @@ h1 {
   box-shadow: var(--shadow);
 }
 
+.lobby-panel,
+.room-panel,
 .setup-panel,
 .controls {
   display: grid;
   gap: 0.8rem;
   margin-bottom: 1rem;
-}
-
-.setup-panel {
-  grid-template-columns: minmax(16rem, 1fr) minmax(13rem, 0.55fr) auto auto;
   padding: 1rem;
   align-items: end;
 }
 
+.lobby-panel {
+  grid-template-columns: minmax(12rem, 1fr) minmax(10rem, 0.8fr) auto auto;
+}
+
+.lobby-field,
 .setup-panel label {
   display: grid;
   gap: 0.35rem;
   color: rgba(255, 255, 255, 0.78);
   font-size: 0.9rem;
-  font-weight: 700;
+  font-weight: 800;
+}
+
+.room-panel {
+  grid-template-columns: minmax(8rem, 0.6fr) minmax(12rem, 1fr) minmax(8rem, 0.5fr) auto auto;
+  align-items: center;
+}
+
+.room-panel p,
+.room-panel strong,
+.host-hint {
+  margin: 0;
+}
+
+.label {
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 900;
+}
+
+.room-panel strong {
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--gold);
+}
+
+.setup-panel {
+  grid-template-columns: minmax(13rem, 0.55fr) auto auto 1fr;
+}
+
+.host-hint {
+  color: rgba(255, 255, 255, 0.74);
+  font-size: 0.92rem;
 }
 
 .controls {
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  padding: 1rem;
 }
 
 .primary {
@@ -177,7 +218,7 @@ h1 {
 .melds p {
   margin: 0 0 0.6rem;
   color: var(--gold);
-  font-weight: 800;
+  font-weight: 900;
 }
 
 .discard-card {
@@ -190,7 +231,7 @@ h1 {
   border: 2px dashed rgba(255, 255, 255, 0.35);
   border-radius: 1rem;
   color: rgba(255, 255, 255, 0.7);
-  font-weight: 800;
+  font-weight: 900;
 }
 
 .discard-zone small {
@@ -217,10 +258,37 @@ h1 {
 
 .player-card {
   padding: 1rem;
+  position: relative;
+  overflow: hidden;
 }
 
 .player-card.active {
   outline: 3px solid var(--gold);
+}
+
+.player-card.viewer::before,
+.player-card.disconnected::before {
+  position: absolute;
+  top: 0.9rem;
+  right: -2.6rem;
+  rotate: 35deg;
+  min-width: 8.5rem;
+  padding: 0.25rem 0.6rem;
+  text-align: center;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.player-card.viewer::before {
+  content: "YOU";
+  background: var(--gold);
+  color: var(--ink);
+}
+
+.player-card.disconnected::before {
+  content: "OFFLINE";
+  background: #8c1d13;
+  color: white;
 }
 
 .player-header {
@@ -234,6 +302,17 @@ h1 {
 .player-header h3,
 .player-header p {
   margin: 0;
+}
+
+.player-header h3 span {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.12rem 0.4rem;
+  border-radius: 999px;
+  background: rgba(244, 197, 66, 0.18);
+  color: var(--gold);
+  font-size: 0.7rem;
+  vertical-align: middle;
 }
 
 .player-header p {
@@ -289,6 +368,21 @@ h1 {
   transform: translateY(-0.45rem);
 }
 
+.card.back {
+  border-color: rgba(255, 255, 255, 0.15);
+  background:
+    radial-gradient(circle, rgba(255, 255, 255, 0.28) 0.15rem, transparent 0.18rem),
+    linear-gradient(145deg, #0b3d30, #08281f);
+  background-size: 0.7rem 0.7rem, auto;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.no-cards {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.68);
+  font-weight: 800;
+}
+
 .melds {
   margin-top: 1rem;
   padding-top: 1rem;
@@ -324,6 +418,16 @@ h1 {
   background: var(--panel-deep);
 }
 
+.empty-player h3,
+.empty-player p {
+  margin: 0;
+}
+
+.empty-player p {
+  margin-top: 0.35rem;
+  color: rgba(255, 255, 255, 0.72);
+}
+
 .notes {
   margin-top: 1rem;
   padding: 1rem;
@@ -339,16 +443,18 @@ h1 {
   color: rgba(255, 255, 255, 0.75);
 }
 
-@media (max-width: 820px) {
+@media (max-width: 900px) {
   .hero,
-  .table-area {
-    grid-template-columns: 1fr;
-    display: grid;
-  }
-
+  .table-area,
+  .lobby-panel,
+  .room-panel,
   .setup-panel,
   .controls {
     grid-template-columns: 1fr;
+  }
+
+  .hero {
+    display: grid;
   }
 
   .hero-card {

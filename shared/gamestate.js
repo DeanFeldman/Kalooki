@@ -16,7 +16,7 @@ export class GameState {
     this.hasDrawn = false;
     this.hasDiscarded = false;
     this.topDiscardBuyable = false;
-    this.lastMessage = "Click Start Round to begin.";
+    this.lastMessage = "Create or join a room to begin.";
     this.winnerIndex = null;
   }
 
@@ -28,11 +28,31 @@ export class GameState {
     return this.players[this.currentPlayerIndex];
   }
 
+  setPlayers(playerNames, { keepScores = true } = {}) {
+    if (this.roundStarted) return false;
+
+    const names = normalisePlayerNames(playerNames);
+    const oldScores = new Map(this.players.map(player => [player.name, player.score]));
+    this.playerNames = names;
+    this.players = names.map(name => {
+      const player = createPlayer(name);
+      if (keepScores && oldScores.has(name)) player.score = oldScores.get(name);
+      return player;
+    });
+    this.currentPlayerIndex = Math.min(this.currentPlayerIndex, this.players.length - 1);
+    return true;
+  }
+
   startRound() {
     if (this.currentRound >= ROUND_RULES.length) {
       this.gameFinished = true;
       this.roundStarted = false;
       this.lastMessage = "Game complete.";
+      return false;
+    }
+
+    if (this.players.length < 2) {
+      this.lastMessage = "At least 2 players are needed to start.";
       return false;
     }
 
@@ -82,11 +102,13 @@ export class GameState {
     this.hasDiscarded = false;
     this.topDiscardBuyable = false;
     this.winnerIndex = null;
-    this.lastMessage = "New game created. Click Start Round to begin.";
+    this.lastMessage = "New game created. Start the first round when ready.";
   }
 
   jumpToRound(roundIndex) {
     if (!Number.isInteger(roundIndex) || roundIndex < 0 || roundIndex >= ROUND_RULES.length) return false;
+    if (this.roundStarted) return false;
+
     this.currentRound = roundIndex;
     this.roundStarted = false;
     this.betweenRounds = false;
@@ -105,7 +127,7 @@ export class GameState {
 
     this.discardPile = [];
     this.deck = new Deck();
-    this.lastMessage = `Jumped to round ${this.currentRound + 1}. Click Start Round.`;
+    this.lastMessage = `Jumped to round ${this.currentRound + 1}. Start the round when ready.`;
     return true;
   }
 
@@ -152,7 +174,7 @@ export class GameState {
     this.discardPile.push(card);
     this.hasDiscarded = true;
     this.topDiscardBuyable = true;
-    this.lastMessage = `${player.name} discarded a card.`;
+    this.lastMessage = `${player.name} discarded ${cardLabel(card)}.`;
 
     if (player.hasComeDown && player.hand.length === 0) {
       this.finishRound(this.currentPlayerIndex);
@@ -269,6 +291,21 @@ export class GameState {
     return { boughtCard, penaltyCard };
   }
 
+  reorderHand(playerIndex, fromIndex, toIndex) {
+    if (!this.roundStarted || playerIndex !== this.currentPlayerIndex) return false;
+
+    const hand = this.players[playerIndex]?.hand;
+    if (!hand) return false;
+    if (!Number.isInteger(fromIndex) || !Number.isInteger(toIndex)) return false;
+    if (fromIndex < 0 || fromIndex >= hand.length || toIndex < 0 || toIndex >= hand.length) return false;
+    if (fromIndex === toIndex) return true;
+
+    const [movedCard] = hand.splice(fromIndex, 1);
+    hand.splice(toIndex, 0, movedCard);
+    this.lastMessage = `${this.players[playerIndex].name} reordered their hand.`;
+    return true;
+  }
+
   nextP() {
     if (!this.roundStarted || this.betweenRounds || this.gameFinished) return;
 
@@ -328,7 +365,8 @@ function createPlayer(name) {
 }
 
 function normalisePlayerNames(playerNames) {
-  const names = playerNames
+  const source = Array.isArray(playerNames) ? playerNames : [];
+  const names = source
     .map(name => String(name).trim())
     .filter(Boolean)
     .slice(0, 4);
@@ -411,4 +449,10 @@ function sortMeldForDisplay(cards) {
     if (a.suit === b.suit) return aRank - bRank;
     return String(a.suit).localeCompare(String(b.suit));
   });
+}
+
+function cardLabel(card) {
+  if (!card) return "a card";
+  if (card.isJoker || card.rank === "JOKER") return "a Joker";
+  return `${card.rank} of ${card.suit}`;
 }

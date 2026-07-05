@@ -1,8 +1,18 @@
 import { cardToDisplay, isRedCard } from "../shared/card.js";
-import { GameState } from "../shared/gamestate.js";
 import { formatRule, ROUND_RULES } from "../shared/rules.js";
 
 const els = {
+  lobbyPanel: document.getElementById("lobbyPanel"),
+  roomPanel: document.getElementById("roomPanel"),
+  createRoomBtn: document.getElementById("createRoomButton"),
+  joinRoomBtn: document.getElementById("joinRoomButton"),
+  copyRoomBtn: document.getElementById("copyRoomButton"),
+  leaveRoomBtn: document.getElementById("leaveRoomButton"),
+  playerNameInput: document.getElementById("playerNameInput"),
+  roomCodeInput: document.getElementById("roomCodeInput"),
+  roomCodeText: document.getElementById("roomCodeText"),
+  viewerText: document.getElementById("viewerText"),
+  connectionText: document.getElementById("connectionText"),
   players: document.getElementById("players"),
   drawBtn: document.getElementById("drawButton"),
   discardBtn: document.getElementById("discardButton"),
@@ -17,37 +27,77 @@ const els = {
   roundText: document.getElementById("roundText"),
   statusText: document.getElementById("statusText"),
   deckCount: document.getElementById("deckCount"),
-  playerNamesInput: document.getElementById("playerNamesInput"),
-  buyHint: document.getElementById("buyHint")
+  buyHint: document.getElementById("buyHint"),
+  hostHint: document.getElementById("hostHint")
 };
 
-let game = new GameState(getNamesFromInput());
+let socket = null;
+let state = null;
+let joinedRoom = false;
 let selectedCardIndices = [];
 let draggedCardIndex = null;
+let reconnectTimer = null;
+let manualLeave = false;
+
+const savedName = localStorage.getItem("kalooki_player_name");
+const savedRoom = localStorage.getItem("kalooki_room_code");
+const savedPlayerId = localStorage.getItem("kalooki_player_id");
+
+if (savedName) els.playerNameInput.value = savedName;
+if (savedRoom) els.roomCodeInput.value = savedRoom;
 
 populateRoundSelect();
+connectSocket();
 render();
 
-els.startRoundBtn.addEventListener("click", () => {
-  if (!game.startRound()) return;
+els.createRoomBtn.addEventListener("click", () => {
+  manualLeave = false;
+  localStorage.setItem("kalooki_player_name", cleanNameInput());
+  send("createRoom", { playerName: cleanNameInput() });
+});
+
+els.joinRoomBtn.addEventListener("click", () => {
+  manualLeave = false;
+  localStorage.setItem("kalooki_player_name", cleanNameInput());
+  send("joinRoom", { playerName: cleanNameInput(), roomCode: els.roomCodeInput.value });
+});
+
+els.copyRoomBtn.addEventListener("click", async () => {
+  if (!state?.roomCode) return;
+  const inviteUrl = `${location.origin}?room=${state.roomCode}`;
+  try {
+    await navigator.clipboard.writeText(inviteUrl);
+    showMessage("Invite link copied.");
+  } catch {
+    showMessage(`Room code: ${state.roomCode}`);
+  }
+});
+
+els.leaveRoomBtn.addEventListener("click", () => {
+  manualLeave = true;
+  joinedRoom = false;
+  state = null;
   selectedCardIndices = [];
+  localStorage.removeItem("kalooki_room_code");
+  localStorage.removeItem("kalooki_player_id");
+  if (socket) socket.close();
+  connectSocket();
   render();
+});
+
+els.startRoundBtn.addEventListener("click", () => {
+  selectedCardIndices = [];
+  send("startRound");
 });
 
 els.drawBtn.addEventListener("click", () => {
-  if (!game.drawFromDeck()) {
-    showMessage("You can only draw once per turn, and the round must be started.");
-  }
   selectedCardIndices = [];
-  render();
+  send("drawDeck");
 });
 
 els.pickDiscardBtn.addEventListener("click", () => {
-  if (!game.drawFromDiscard()) {
-    showMessage("You cannot pick up the discard right now.");
-  }
   selectedCardIndices = [];
-  render();
+  send("drawDiscard");
 });
 
 els.comeDownBtn.addEventListener("click", () => {
@@ -56,18 +106,8 @@ els.comeDownBtn.addEventListener("click", () => {
     return;
   }
 
-  if (!game.canComeDown(selectedCardIndices)) {
-    showMessage("Blitz rule: select every card, or all except one card to discard.");
-    return;
-  }
-
-  if (!game.layDownMeld(selectedCardIndices)) {
-    showMessage("That selection is not a valid meld for this round.");
-    return;
-  }
-
+  send("layMeld", { cardIndices: selectedCardIndices });
   selectedCardIndices = [];
-  render();
 });
 
 els.discardBtn.addEventListener("click", () => {
@@ -76,79 +116,177 @@ els.discardBtn.addEventListener("click", () => {
     return;
   }
 
-  const didDiscard = game.discardCard(selectedCardIndices[0]);
-  if (!didDiscard) {
-    showMessage("You must draw first, then discard exactly once.");
-    return;
-  }
-
+  send("discard", { cardIndex: selectedCardIndices[0] });
   selectedCardIndices = [];
-  if (game.roundStarted) game.nextP();
-  render();
 });
 
 els.jumpRoundBtn.addEventListener("click", () => {
-  const roundIndex = Number(els.roundSelect.value);
-  if (!game.jumpToRound(roundIndex)) {
-    showMessage("Choose a valid round.");
-  }
   selectedCardIndices = [];
-  render();
+  send("jumpRound", { roundIndex: Number(els.roundSelect.value) });
 });
 
 els.resetBtn.addEventListener("click", () => {
-  game.resetGame(getNamesFromInput());
   selectedCardIndices = [];
-  populateRoundSelect();
-  render();
+  send("resetGame");
 });
 
-els.playerNamesInput.addEventListener("change", () => {
-  if (!game.roundStarted) {
-    game.resetGame(getNamesFromInput());
-    selectedCardIndices = [];
-    render();
-  }
+window.addEventListener("beforeunload", () => {
+  localStorage.setItem("kalooki_player_name", cleanNameInput());
 });
+
+function connectSocket() {
+  clearTimeout(reconnectTimer);
+  socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
+
+  socket.addEventListener("open", () => {
+    manualLeave = false;
+    updateConnectionText("Online");
+    showMessage("Connected. Create a room, or enter a room code and join.");
+
+    const params = new URLSearchParams(location.search);
+    const urlRoom = params.get("room");
+    const currentSavedPlayerId = localStorage.getItem("kalooki_player_id");
+    if (urlRoom && !currentSavedPlayerId && !joinedRoom) {
+      els.roomCodeInput.value = urlRoom;
+    }
+
+    const roomCode = localStorage.getItem("kalooki_room_code");
+    const playerId = localStorage.getItem("kalooki_player_id");
+    if (roomCode && playerId && !joinedRoom) {
+      showMessage("Rejoining your previous room...");
+      send("rejoinRoom", { roomCode, playerId });
+    }
+
+    render();
+  });
+
+  socket.addEventListener("message", event => {
+    let message;
+    try {
+      message = JSON.parse(event.data);
+    } catch {
+      return;
+    }
+
+    if (message.type === "connected") {
+      updateConnectionText("Online");
+      if (!state) showMessage("Connected. Create a room, or enter a room code and join.");
+      render();
+      return;
+    }
+
+    if (message.type === "roomJoined") {
+      joinedRoom = true;
+      localStorage.setItem("kalooki_room_code", message.roomCode);
+      localStorage.setItem("kalooki_player_id", message.playerId);
+      els.roomCodeInput.value = message.roomCode;
+      showMessage("Room joined. Waiting for the room state...");
+      render();
+      return;
+    }
+
+    if (message.type === "state") {
+      state = message.state;
+      joinedRoom = true;
+      render();
+      return;
+    }
+
+    if (message.type === "error") {
+      showMessage(message.message);
+    }
+  });
+
+  socket.addEventListener("close", () => {
+    updateConnectionText("Offline");
+    showMessage(manualLeave ? "Left room." : "Disconnected. Trying to reconnect...");
+    render();
+    if (!manualLeave) {
+      reconnectTimer = setTimeout(connectSocket, 1200);
+    }
+  });
+}
+
+function send(type, payload = {}) {
+  if (!socket || socket.readyState !== WebSocket.OPEN) {
+    showMessage("Not connected to the server yet.");
+    return;
+  }
+  socket.send(JSON.stringify({ type, payload }));
+}
 
 function render() {
+  renderRoomPanels();
   renderGameStatus();
   renderDiscardPile();
   renderPlayers();
   updateButtons();
 }
 
-function renderGameStatus() {
-  const rules = ROUND_RULES[game.currentRound];
-  const currentPlayer = game.getCurrP();
+function renderRoomPanels() {
+  els.lobbyPanel.classList.toggle("hidden", joinedRoom && Boolean(state));
+  els.roomPanel.classList.toggle("hidden", !state);
 
-  els.deckCount.textContent = String(game.deck.size());
-  els.roundSelect.value = String(Math.min(game.currentRound, ROUND_RULES.length - 1));
+  if (!state) {
+    els.roomCodeText.textContent = "—";
+    els.viewerText.textContent = "—";
+    return;
+  }
+
+  const viewer = state.game.players[state.viewerPlayerIndex];
+  els.roomCodeText.textContent = state.roomCode;
+  els.viewerText.textContent = viewer ? `${viewer.name}${state.isHost ? " · Host" : ""}` : "Spectator";
+}
+
+function renderGameStatus() {
+  const game = state?.game;
+  const rules = game?.roundRules?.[game.currentRound] ?? ROUND_RULES[0];
+  const currentPlayer = game?.players?.[game.currentPlayerIndex];
+
+  els.deckCount.textContent = String(game?.deckCount ?? 0);
+  els.roundSelect.value = String(Math.min(game?.currentRound ?? 0, ROUND_RULES.length - 1));
+
+  if (!state) {
+    els.roundText.textContent = "Create or join a room to begin.";
+    els.turn.textContent = "Current turn: Not started";
+    els.statusText.textContent = socket?.readyState === WebSocket.OPEN ? "Connected. Create or join a room." : "Connecting to server...";
+    els.buyHint.textContent = "Buying is not available yet.";
+    els.hostHint.textContent = "Host controls unlock after you create a room.";
+    return;
+  }
 
   if (game.gameFinished) {
     els.roundText.textContent = "Game complete";
     els.turn.textContent = `Winner: ${getOverallWinnerText()}`;
   } else if (game.roundStarted) {
     els.roundText.textContent = `Round ${game.currentRound + 1}: ${rules.map(formatRule).join(" + ")}`;
-    els.turn.textContent = `Current turn: ${currentPlayer.name}`;
+    els.turn.textContent = `Current turn: ${currentPlayer?.name ?? "Unknown"}`;
   } else if (game.betweenRounds) {
-    els.roundText.textContent = `Next round: ${ROUND_RULES[game.currentRound].map(formatRule).join(" + ")}`;
+    const nextRules = game.roundRules[game.currentRound] ?? [];
+    els.roundText.textContent = `Next round: ${nextRules.map(formatRule).join(" + ")}`;
     els.turn.textContent = "Round finished";
   } else {
-    els.roundText.textContent = `Current Game Mode: ${rules ? rules.map(formatRule).join(" + ") : "Not started"}`;
-    els.turn.textContent = "Current turn: Not started";
+    els.roundText.textContent = `Room ${state.roomCode}: waiting to start`;
+    els.turn.textContent = state.seats.length < 2 ? "Waiting for another player" : "Ready to start";
   }
 
-  els.statusText.textContent = game.lastMessage;
+  if (!game.lastMessage && state.isHost && state.seats.length < 2) {
+    els.statusText.textContent = "Share the invite link or room code. You need at least 2 players before the round can start.";
+  } else {
+    els.statusText.textContent = game.lastMessage;
+  }
   els.buyHint.textContent = game.topDiscardBuyable
-    ? "Buying is available for non-current players."
+    ? "Non-current players can buy the top discard."
     : "Buying is not available right now.";
+  els.hostHint.textContent = state.isHost
+    ? "You are the host. You can start rounds, reset, and jump rounds."
+    : "Only the host can start rounds, reset, or jump rounds.";
 }
 
 function renderDiscardPile() {
   els.discardPile.innerHTML = "";
 
-  const topCard = game.discardPile.at(-1);
+  const topCard = state?.game?.discardTop;
   if (!topCard) {
     els.discardPile.textContent = "Empty";
     els.discardPile.className = "discard-card empty";
@@ -163,18 +301,28 @@ function renderDiscardPile() {
 function renderPlayers() {
   els.players.innerHTML = "";
 
-  for (let playerIndex = 0; playerIndex < game.players.length; playerIndex++) {
-    const player = game.players[playerIndex];
-    const isCurrentPlayer = playerIndex === game.currentPlayerIndex && game.roundStarted;
+  const players = state?.game?.players ?? [];
+  if (!players.length) {
+    const empty = document.createElement("article");
+    empty.className = "player-card empty-player";
+    empty.innerHTML = `<h3>No room yet</h3><p>Create a room, then share the invite link.</p>`;
+    els.players.appendChild(empty);
+    return;
+  }
+
+  for (let playerIndex = 0; playerIndex < players.length; playerIndex++) {
+    const player = players[playerIndex];
+    const isCurrentPlayer = playerIndex === state.game.currentPlayerIndex && state.game.roundStarted;
+    const isViewer = player.isViewer;
     const card = document.createElement("article");
-    card.className = `player-card${isCurrentPlayer ? " active" : ""}`;
+    card.className = `player-card${isCurrentPlayer ? " active" : ""}${isViewer ? " viewer" : ""}${!player.connected ? " disconnected" : ""}`;
 
     const header = document.createElement("header");
     header.className = "player-header";
     header.innerHTML = `
       <div>
-        <h3>${escapeHtml(player.name)}</h3>
-        <p>${player.hasComeDown ? "Came down" : remainingRuleText(player)}</p>
+        <h3>${escapeHtml(player.name)}${isViewer ? " <span>You</span>" : ""}</h3>
+        <p>${playerStatusText(player)}</p>
       </div>
       <strong>${player.score}</strong>
     `;
@@ -184,16 +332,30 @@ function renderPlayers() {
     hand.className = "hand";
     hand.ariaLabel = `${player.name}'s hand`;
 
-    player.hand.forEach((playerCard, cardIndex) => {
-      hand.appendChild(createCardElement(playerCard, {
-        selectable: isCurrentPlayer,
-        selected: isCurrentPlayer && selectedCardIndices.includes(cardIndex),
-        draggable: isCurrentPlayer,
-        onClick: () => toggleSelectedCard(cardIndex),
-        onDragStart: () => { draggedCardIndex = cardIndex; },
-        onDrop: () => reorderCurrentPlayerHand(cardIndex)
-      }));
-    });
+    if (isViewer && player.hand.length > 0) {
+      player.hand.forEach((playerCard, cardIndex) => {
+        hand.appendChild(createCardElement(playerCard, {
+          selectable: canUseHand(playerIndex),
+          selected: selectedCardIndices.includes(cardIndex),
+          draggable: canUseHand(playerIndex),
+          onClick: () => toggleSelectedCard(cardIndex),
+          onDragStart: () => { draggedCardIndex = cardIndex; },
+          onDrop: () => reorderCurrentPlayerHand(cardIndex)
+        }));
+      });
+    } else if (player.handCount > 0) {
+      for (let i = 0; i < player.handCount; i++) {
+        const back = document.createElement("div");
+        back.className = "card back";
+        back.textContent = "◆";
+        hand.appendChild(back);
+      }
+    } else {
+      const none = document.createElement("p");
+      none.className = "no-cards";
+      none.textContent = state.game.roundStarted ? "No cards" : "Waiting in lobby";
+      hand.appendChild(none);
+    }
 
     card.appendChild(hand);
 
@@ -209,7 +371,8 @@ function renderPlayers() {
         meldEl.type = "button";
         meldEl.className = "meld";
         meldEl.title = "Select one card from your hand, then click a meld to add it.";
-        meldEl.innerHTML = meld.map(cardItem => `<span class="mini-card${isRedCard(cardItem) ? " red" : ""}">${cardToDisplay(cardItem)}</span>`).join("");
+        meldEl.innerHTML = meld.map(cardItem => `<span class="mini-card${isRedCard(cardItem) ? " red" : ""}">${escapeHtml(cardToDisplay(cardItem))}</span>`).join("");
+        meldEl.disabled = !canActAfterDraw() || selectedCardIndices.length !== 1;
         meldEl.addEventListener("click", () => addSelectedCardToMeld(playerIndex, meldIndex));
         melds.appendChild(meldEl);
       });
@@ -217,13 +380,13 @@ function renderPlayers() {
       card.appendChild(melds);
     }
 
-    if (game.roundStarted && playerIndex !== game.currentPlayerIndex) {
+    if (state.game.roundStarted && isViewer && playerIndex !== state.game.currentPlayerIndex) {
       const buyButton = document.createElement("button");
       buyButton.type = "button";
       buyButton.className = "buy-button";
       buyButton.textContent = "Buy Top Discard";
-      buyButton.disabled = !game.topDiscardBuyable || game.discardPile.length === 0;
-      buyButton.addEventListener("click", () => buyTopDiscardForPlayer(playerIndex));
+      buyButton.disabled = !state.game.topDiscardBuyable || !state.game.discardTop;
+      buyButton.addEventListener("click", () => send("buyDiscard"));
       card.appendChild(buyButton);
     }
 
@@ -236,7 +399,7 @@ function createCardElement(card, options = {}) {
   cardEl.type = "button";
   cardEl.className = `card${isRedCard(card) ? " red" : ""}${options.selected ? " selected" : ""}`;
   cardEl.textContent = cardToDisplay(card);
-  cardEl.title = card?.toString?.() ?? cardToDisplay(card);
+  cardEl.title = cardTitle(card);
   cardEl.disabled = options.selectable === false;
 
   if (options.selectable) {
@@ -256,6 +419,15 @@ function createCardElement(card, options = {}) {
   return cardEl;
 }
 
+function canUseHand(playerIndex) {
+  return state?.game?.roundStarted && playerIndex === state.viewerPlayerIndex && playerIndex === state.game.currentPlayerIndex;
+}
+
+function canActAfterDraw() {
+  const game = state?.game;
+  return Boolean(game?.roundStarted && game.currentPlayerIndex === state.viewerPlayerIndex && game.hasDrawn && !game.hasDiscarded);
+}
+
 function toggleSelectedCard(cardIndex) {
   const existingIndex = selectedCardIndices.indexOf(cardIndex);
   if (existingIndex >= 0) selectedCardIndices.splice(existingIndex, 1);
@@ -266,55 +438,48 @@ function toggleSelectedCard(cardIndex) {
 
 function reorderCurrentPlayerHand(dropIndex) {
   if (draggedCardIndex === null || draggedCardIndex === dropIndex) return;
-
-  const hand = game.getCurrP().hand;
-  const [movedCard] = hand.splice(draggedCardIndex, 1);
-  hand.splice(dropIndex, 0, movedCard);
-
+  send("reorderHand", { fromIndex: draggedCardIndex, toIndex: dropIndex });
   draggedCardIndex = null;
   selectedCardIndices = [];
-  render();
 }
 
 function addSelectedCardToMeld(playerIndex, meldIndex) {
   if (selectedCardIndices.length !== 1) {
-    showMessage("Select exactly one card from the current player's hand first.");
+    showMessage("Select exactly one card from your hand first.");
     return;
   }
 
-  const didAdd = game.addCardToMeld(playerIndex, meldIndex, selectedCardIndices[0]);
-  if (!didAdd) {
-    showMessage("That card cannot be added to this meld. You must have come down first.");
-    return;
-  }
-
+  send("addToMeld", {
+    targetPlayerIndex: playerIndex,
+    targetMeldIndex: meldIndex,
+    cardHandIndex: selectedCardIndices[0]
+  });
   selectedCardIndices = [];
-  render();
-}
-
-function buyTopDiscardForPlayer(playerIndex) {
-  const result = game.buyDiscardOutOfTurn(playerIndex);
-  if (!result) {
-    showMessage("That player cannot buy the discard right now.");
-    return;
-  }
-
-  selectedCardIndices = [];
-  render();
 }
 
 function updateButtons() {
-  const roundActive = game.roundStarted && !game.gameFinished;
-  const canDraw = roundActive && !game.hasDrawn && !game.hasDiscarded;
-  const canActAfterDraw = roundActive && game.hasDrawn && !game.hasDiscarded;
+  const game = state?.game;
+  const inRoom = Boolean(state);
+  const isHost = Boolean(state?.isHost);
+  const isViewerTurn = game?.currentPlayerIndex === state?.viewerPlayerIndex;
+  const roundActive = Boolean(game?.roundStarted && !game.gameFinished);
+  const canDraw = roundActive && isViewerTurn && !game.hasDrawn && !game.hasDiscarded;
+  const canAct = canActAfterDraw();
 
-  els.startRoundBtn.disabled = game.roundStarted || game.gameFinished;
+  els.createRoomBtn.disabled = socket?.readyState !== WebSocket.OPEN;
+  els.joinRoomBtn.disabled = socket?.readyState !== WebSocket.OPEN;
+  // Keep this clickable for the host, even with one player, so the server can explain why it cannot start yet.
+  els.startRoundBtn.disabled = !inRoom || !isHost || game?.roundStarted || game?.gameFinished;
+  els.startRoundBtn.textContent = inRoom && isHost && !game?.roundStarted && state.seats.length < 2
+    ? "Start Round (need 2 players)"
+    : "Start Round";
   els.drawBtn.disabled = !canDraw;
-  els.pickDiscardBtn.disabled = !canDraw || game.discardPile.length === 0;
-  els.comeDownBtn.disabled = !canActAfterDraw || selectedCardIndices.length === 0;
-  els.discardBtn.disabled = !canActAfterDraw || selectedCardIndices.length !== 1;
-  els.jumpRoundBtn.disabled = game.roundStarted;
-  els.playerNamesInput.disabled = game.roundStarted;
+  els.pickDiscardBtn.disabled = !canDraw || !game?.discardTop;
+  els.comeDownBtn.disabled = !canAct || selectedCardIndices.length === 0;
+  els.discardBtn.disabled = !canAct || selectedCardIndices.length !== 1;
+  els.jumpRoundBtn.disabled = !inRoom || !isHost || game?.roundStarted;
+  els.resetBtn.disabled = !inRoom || !isHost;
+  els.roundSelect.disabled = !inRoom || !isHost || game?.roundStarted;
 }
 
 function populateRoundSelect() {
@@ -327,31 +492,40 @@ function populateRoundSelect() {
   });
 }
 
-function getNamesFromInput() {
-  return els.playerNamesInput.value
-    .split(",")
-    .map(name => name.trim())
-    .filter(Boolean)
-    .slice(0, 4);
-}
-
-function remainingRuleText(player) {
-  if (game.roundStarted && player.remainingRules.length > 0) {
+function playerStatusText(player) {
+  if (!player.connected) return "Disconnected";
+  if (state?.game?.roundStarted && player.remainingRules.length > 0) {
     return `Needs: ${player.remainingRules.map(formatRule).join(" + ")}`;
   }
-  return `${player.hand.length} cards`;
+  if (player.hasComeDown) return `Came down · ${player.handCount} cards`;
+  if (state?.game?.roundStarted) return `${player.handCount} cards`;
+  return "Waiting in lobby";
 }
 
 function getOverallWinnerText() {
-  const orderedPlayers = [...game.players].sort((a, b) => a.score - b.score);
+  const players = state?.game?.players ?? [];
+  const orderedPlayers = [...players].sort((a, b) => a.score - b.score);
   const bestScore = orderedPlayers[0]?.score ?? 0;
   const winners = orderedPlayers.filter(player => player.score === bestScore).map(player => player.name);
   return `${winners.join(" & ")} (${bestScore} points)`;
 }
 
 function showMessage(message) {
-  game.lastMessage = message;
   els.statusText.textContent = message;
+}
+
+function updateConnectionText(text) {
+  els.connectionText.textContent = text;
+}
+
+function cleanNameInput() {
+  return els.playerNameInput.value.trim() || "Player";
+}
+
+function cardTitle(card) {
+  if (!card) return "";
+  if (card.isJoker || card.rank === "JOKER") return "Joker";
+  return `${card.rank} of ${card.suit}`;
 }
 
 function escapeHtml(value) {

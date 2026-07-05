@@ -3,16 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Kalooki</title>
+  <title>Kalooki Online</title>
   <link rel="stylesheet" href="/client/style.css">
 </head>
 <body>
   <main class="app-shell">
     <header class="hero">
       <div>
-        <p class="eyebrow">Card Game</p>
+        <p class="eyebrow">Online Card Game</p>
         <h1>Kalooki</h1>
-        <p id="roundText" class="round-text">Current Game Mode: Not started</p>
+        <p id="roundText" class="round-text">Create or join a room to begin.</p>
       </div>
       <div class="hero-card">
         <span>Deck</span>
@@ -21,17 +21,44 @@
       </div>
     </header>
 
-    <section class="panel setup-panel" aria-label="Game setup">
-      <label>
-        Player names
-        <input id="playerNamesInput" type="text" value="Player 1, Player 2" aria-label="Player names">
-      </label>
+    <section id="lobbyPanel" class="panel lobby-panel" aria-label="Room setup">
+      <div class="lobby-field">
+        <label for="playerNameInput">Your name</label>
+        <input id="playerNameInput" type="text" value="Dean" maxlength="24" autocomplete="nickname">
+      </div>
+      <div class="lobby-field">
+        <label for="roomCodeInput">Room code</label>
+        <input id="roomCodeInput" type="text" placeholder="Example: A1B2C3" maxlength="8" autocomplete="off">
+      </div>
+      <button id="createRoomButton" type="button" class="primary">Create Room</button>
+      <button id="joinRoomButton" type="button">Join Room</button>
+    </section>
+
+    <section id="roomPanel" class="panel room-panel hidden" aria-label="Room information">
+      <div>
+        <p class="label">Room code</p>
+        <strong id="roomCodeText">—</strong>
+      </div>
+      <div>
+        <p class="label">You are</p>
+        <strong id="viewerText">—</strong>
+      </div>
+      <div>
+        <p class="label">Connection</p>
+        <strong id="connectionText">Offline</strong>
+      </div>
+      <button id="copyRoomButton" type="button">Copy Invite Link</button>
+      <button id="leaveRoomButton" type="button" class="danger">Leave Room</button>
+    </section>
+
+    <section class="panel setup-panel" aria-label="Host controls">
       <label>
         Round
         <select id="roundSelect"></select>
       </label>
       <button id="jumpRoundButton" type="button">Jump to Round</button>
       <button id="resetButton" type="button" class="danger">New Game</button>
+      <p id="hostHint" class="host-hint">Host controls unlock after you create a room.</p>
     </section>
 
     <section class="panel controls" aria-label="Game controls">
@@ -45,21 +72,21 @@
     <section class="table-area">
       <aside class="discard-zone" aria-label="Discard pile">
         <p>Discard pile</p>
-        <div id="discardPile" class="discard-card">Empty</div>
-        <small id="buyHint">Players can buy this card when buying is available.</small>
+        <div id="discardPile" class="discard-card empty">Empty</div>
+        <small id="buyHint">Buying is not available yet.</small>
       </aside>
 
       <section class="status-zone" aria-live="polite">
         <h2 id="turn">Current turn: Not started</h2>
-        <p id="statusText">Click Start Round to begin.</p>
+        <p id="statusText">Create or join a room first.</p>
       </section>
     </section>
 
     <section id="players" class="players-grid" aria-label="Players"></section>
 
     <section class="panel notes">
-      <h2>How to play this version</h2>
-      <p>Click cards to select them. Drag cards in your hand to reorder them. Draw first, then lay a meld or discard. After you have come down, click a table meld to add one selected card to it.</p>
+      <h2>Phase 2 prototype</h2>
+      <p>The server owns the room and game state. Each browser only sends moves and receives its own safe view of the table. Other players' hands are hidden.</p>
     </section>
   </main>
 

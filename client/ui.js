@@ -334,15 +334,23 @@ function renderPlayers() {
     card.appendChild(header);
 
     const hand = document.createElement("div");
-    hand.className = `hand${isViewer && canUseHand(playerIndex) ? " reorderable" : ""}`;
+    
+    //hand.className = `hand${isViewer && canUseHand(playerIndex) ? " reorderable" : ""}`;
+    hand.className = `hand${canReorderHand(playerIndex) ? " reorderable" : ""}`;
+
     hand.ariaLabel = `${player.name}'s hand`;
 
     if (isViewer && player.hand.length > 0) {
       player.hand.forEach((playerCard, cardIndex) => {
         hand.appendChild(createCardElement(playerCard, {
+        // selectable: canUseHand(playerIndex),
+        // selected: selectedCardIndices.includes(cardIndex),
+        // draggable: canUseHand(playerIndex),
+
         selectable: canUseHand(playerIndex),
         selected: selectedCardIndices.includes(cardIndex),
-        draggable: canUseHand(playerIndex),
+        draggable: canReorderHand(playerIndex),
+
         cardIndex,
         onClick: () => toggleSelectedCard(cardIndex),
         onDragStart: () => { draggedCardIndex = cardIndex; },
@@ -407,7 +415,7 @@ function createCardElement(card, options = {}) {
   cardEl.className = `card${isRedCard(card) ? " red" : ""}${options.selected ? " selected" : ""}`;
   cardEl.textContent = cardToDisplay(card);
   cardEl.title = cardTitle(card);
-  cardEl.disabled = options.selectable === false;
+  cardEl.disabled = options.selectable === false && options.draggable !== true;
 
   if (Number.isInteger(options.cardIndex)) {
     cardEl.dataset.cardIndex = String(options.cardIndex);
@@ -545,6 +553,16 @@ function resetPointerDragStyles(cardEl) {
 
 function canUseHand(playerIndex) {
   return state?.game?.roundStarted && playerIndex === state.viewerPlayerIndex && playerIndex === state.game.currentPlayerIndex;
+}
+
+function canReorderHand(playerIndex) {
+  const game = state?.game;
+  return Boolean(
+    game?.roundStarted &&
+    !game.betweenRounds &&
+    !game.gameFinished &&
+    playerIndex === state.viewerPlayerIndex
+  );
 }
 
 function canActAfterDraw() {

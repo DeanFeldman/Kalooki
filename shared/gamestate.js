@@ -8,6 +8,7 @@ export class GameState {
     this.players = this.playerNames.map(createPlayer);
     this.deck = new Deck();
     this.discardPile = [];
+    this.discardOwnerIndices = [];
     this.currentPlayerIndex = 0;
     this.currentRound = 0;
     this.roundStarted = false;
@@ -58,6 +59,7 @@ export class GameState {
 
     this.deck = new Deck();
     this.discardPile = [];
+    this.discardOwnerIndices = [];
     this.currentPlayerIndex = 0;
     this.roundStarted = true;
     this.betweenRounds = false;
@@ -82,7 +84,10 @@ export class GameState {
     }
 
     const firstDiscard = this.deck.draw();
-    if (firstDiscard) this.discardPile.push(firstDiscard);
+    if (firstDiscard) {
+      this.discardPile.push(firstDiscard);
+      this.discardOwnerIndices.push(null);
+    }
 
     this.lastMessage = `Round ${this.currentRound + 1} started: ${this.currentRules.join(" + ")}.`;
     return true;
@@ -93,6 +98,7 @@ export class GameState {
     this.players = this.playerNames.map(createPlayer);
     this.deck = new Deck();
     this.discardPile = [];
+    this.discardOwnerIndices = [];
     this.currentPlayerIndex = 0;
     this.currentRound = 0;
     this.roundStarted = false;
@@ -126,7 +132,9 @@ export class GameState {
     }
 
     this.discardPile = [];
+    this.discardOwnerIndices = [];
     this.deck = new Deck();
+
     this.lastMessage = `Jumped to round ${this.currentRound + 1}. Start the round when ready.`;
     return true;
   }
@@ -151,8 +159,9 @@ export class GameState {
 
   drawFromDiscard() {
     if (!this.canDraw() || this.discardPile.length === 0) return null;
-
+    
     const card = this.discardPile.pop();
+    this.discardOwnerIndices.pop();
     this.getCurrP().hand.push(card);
     this.hasDrawn = true;
     this.topDiscardBuyable = false;
@@ -172,6 +181,7 @@ export class GameState {
 
     const [card] = player.hand.splice(index, 1);
     this.discardPile.push(card);
+    this.discardOwnerIndices.push(this.currentPlayerIndex);
     this.hasDiscarded = true;
     this.topDiscardBuyable = true;
     this.lastMessage = `${player.name} discarded ${cardLabel(card)}.`;
@@ -272,27 +282,45 @@ export class GameState {
     return true;
   }
 
-  buyDiscardOutOfTurn(playerIndex) {
-    if (!this.roundStarted || !this.topDiscardBuyable || this.discardPile.length === 0) return null;
-    if (playerIndex === this.currentPlayerIndex) return null;
+canBuyDiscard(playerIndex) {
+  if (!this.roundStarted || !this.topDiscardBuyable || this.discardPile.length === 0) return false;
+  if (playerIndex === this.currentPlayerIndex) return false;
+  if (!this.players[playerIndex]) return false;
 
-    const player = this.players[playerIndex];
-    if (!player) return null;
+  const topDiscardOwnerIndex = this.discardOwnerIndices.at(-1);
+  return topDiscardOwnerIndex !== playerIndex;
+}
 
-    const boughtCard = this.discardPile.pop();
-    player.hand.push(boughtCard);
+buyDiscardOutOfTurn(playerIndex) {
+  if (!this.canBuyDiscard(playerIndex)) {
+    const topDiscardOwnerIndex = this.discardOwnerIndices.at(-1);
 
-    this.refillDeckIfNeeded();
-    const penaltyCard = this.deck.draw();
-    if (penaltyCard) player.hand.push(penaltyCard);
+    if (topDiscardOwnerIndex === playerIndex) {
+      this.lastMessage = "You cannot buy your own discard.";
+    } else {
+      this.lastMessage = "That discard cannot be bought right now.";
+    }
 
-    this.topDiscardBuyable = false;
-    this.lastMessage = `${player.name} bought the discard and took a penalty card.`;
-    return { boughtCard, penaltyCard };
+    return null;
   }
 
-  reorderHand(playerIndex, fromIndex, toIndex) {
-    if (!this.roundStarted || playerIndex !== this.currentPlayerIndex) return false;
+  const player = this.players[playerIndex];
+
+  const boughtCard = this.discardPile.pop();
+  this.discardOwnerIndices.pop();
+  player.hand.push(boughtCard);
+
+  this.refillDeckIfNeeded();
+  const penaltyCard = this.deck.draw();
+  if (penaltyCard) player.hand.push(penaltyCard);
+
+  this.topDiscardBuyable = false;
+  this.lastMessage = `${player.name} bought the discard and took a penalty card.`;
+  return { boughtCard, penaltyCard };
+}
+
+reorderHand(playerIndex, fromIndex, toIndex) {
+  if (!this.roundStarted || this.betweenRounds || this.gameFinished) return false;
 
     const hand = this.players[playerIndex]?.hand;
     if (!hand) return false;
@@ -302,7 +330,7 @@ export class GameState {
 
     const [movedCard] = hand.splice(fromIndex, 1);
     hand.splice(toIndex, 0, movedCard);
-    this.lastMessage = `${this.players[playerIndex].name} reordered their hand.`;
+    // this.lastMessage = `${this.players[playerIndex].name} reordered their hand.`;
     return true;
   }
 
@@ -348,8 +376,13 @@ export class GameState {
     if (this.deck.size() > 0 || this.discardPile.length <= 1) return;
 
     const topDiscard = this.discardPile.pop();
+    const topDiscardOwnerIndex = this.discardOwnerIndices.pop();
+
     this.deck.addCards(this.discardPile.splice(0));
+    this.discardOwnerIndices.splice(0);
+
     this.discardPile.push(topDiscard);
+    this.discardOwnerIndices.push(topDiscardOwnerIndex ?? null);
   }
 }
 

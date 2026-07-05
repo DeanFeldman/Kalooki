@@ -155,10 +155,15 @@ function handleClientMessage(ws, rawMessage) {
         });
         break;
       case "reorderHand":
-        applyTurnAction(ws, room => {
+        applyRoomAction(ws, room => {
           const playerIndex = getPlayerIndex(room, ws.session.playerId);
-          return room.game.reorderHand(playerIndex, Number(payload.fromIndex), Number(payload.toIndex));
-        }, { quiet: true });
+          if (playerIndex < 0) return false;
+          return room.game.reorderHand(
+            playerIndex,
+            Number(payload.fromIndex),
+            Number(payload.toIndex)
+          );
+        });
         break;
       default:
         ws.send({ type: "error", message: `Unknown action: ${message.type}` });
@@ -408,6 +413,7 @@ function buildRoomView(room, viewerPlayerId) {
       hasDrawn: game.hasDrawn,
       hasDiscarded: game.hasDiscarded,
       topDiscardBuyable: game.topDiscardBuyable,
+      canViewerBuyDiscard: game.canBuyDiscard(viewerPlayerIndex),
       lastMessage: game.lastMessage,
       winnerIndex: game.winnerIndex,
       deckCount: game.deck.size(),

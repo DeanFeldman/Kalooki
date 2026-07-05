@@ -34,9 +34,14 @@ const els = {
 let socket = null;
 let state = null;
 let joinedRoom = false;
+
 let selectedCardIndices = [];
 let draggedCardIndex = null;
+let pointerReorder = null;
+let suppressNextCardClick = false;
+const POINTER_REORDER_THRESHOLD = 8;
 let reconnectTimer = null;
+
 let manualLeave = false;
 
 const savedName = localStorage.getItem("kalooki_player_name");
@@ -329,18 +334,19 @@ function renderPlayers() {
     card.appendChild(header);
 
     const hand = document.createElement("div");
-    hand.className = "hand";
+    hand.className = `hand${isViewer && canUseHand(playerIndex) ? " reorderable" : ""}`;
     hand.ariaLabel = `${player.name}'s hand`;
 
     if (isViewer && player.hand.length > 0) {
       player.hand.forEach((playerCard, cardIndex) => {
         hand.appendChild(createCardElement(playerCard, {
-          selectable: canUseHand(playerIndex),
-          selected: selectedCardIndices.includes(cardIndex),
-          draggable: canUseHand(playerIndex),
-          onClick: () => toggleSelectedCard(cardIndex),
-          onDragStart: () => { draggedCardIndex = cardIndex; },
-          onDrop: () => reorderCurrentPlayerHand(cardIndex)
+        selectable: canUseHand(playerIndex),
+        selected: selectedCardIndices.includes(cardIndex),
+        draggable: canUseHand(playerIndex),
+        cardIndex,
+        onClick: () => toggleSelectedCard(cardIndex),
+        onDragStart: () => { draggedCardIndex = cardIndex; },
+        onDrop: () => reorderCurrentPlayerHand(cardIndex)
         }));
       });
     } else if (player.handCount > 0) {
@@ -385,7 +391,8 @@ function renderPlayers() {
       buyButton.type = "button";
       buyButton.className = "buy-button";
       buyButton.textContent = "Buy Top Discard";
-      buyButton.disabled = !state.game.topDiscardBuyable || !state.game.discardTop;
+      // buyButton.disabled = !state.game.topDiscardBuyable || !state.game.discardTop;
+      buyButton.disabled = !state.game.canViewerBuyDiscard;
       buyButton.addEventListener("click", () => send("buyDiscard"));
       card.appendChild(buyButton);
     }
@@ -402,11 +409,23 @@ function createCardElement(card, options = {}) {
   cardEl.title = cardTitle(card);
   cardEl.disabled = options.selectable === false;
 
+  if (Number.isInteger(options.cardIndex)) {
+    cardEl.dataset.cardIndex = String(options.cardIndex);
+  }
+
   if (options.selectable) {
-    cardEl.addEventListener("click", options.onClick);
+    cardEl.addEventListener("click", event => {
+      if (suppressNextCardClick) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      options.onClick?.(event);
+    });
   }
 
   if (options.draggable) {
+    // Desktop drag/drop.
     cardEl.draggable = true;
     cardEl.addEventListener("dragstart", options.onDragStart);
     cardEl.addEventListener("dragover", event => event.preventDefault());
@@ -414,10 +433,115 @@ function createCardElement(card, options = {}) {
       event.preventDefault();
       options.onDrop();
     });
+
+    // Mobile/tablet drag/drop.
+    cardEl.addEventListener("pointerdown", event => beginPointerReorder(event, cardEl, options.cardIndex));
+    cardEl.addEventListener("pointermove", event => movePointerReorder(event, cardEl));
+    cardEl.addEventListener("pointerup", event => finishPointerReorder(event, cardEl));
+    cardEl.addEventListener("pointercancel", event => cancelPointerReorder(event, cardEl));
   }
 
   return cardEl;
 }
+
+
+function beginPointerReorder(event, cardEl, fromIndex) {
+  if (!Number.isInteger(fromIndex)) return;
+  if (event.pointerType === "mouse" && event.button !== 0) return;
+
+  pointerReorder = {
+    pointerId: event.pointerId,
+    fromIndex,
+    startX: event.clientX,
+    startY: event.clientY,
+    moved: false
+  };
+
+  cardEl.setPointerCapture?.(event.pointerId);
+}
+
+function movePointerReorder(event, cardEl) {
+  if (!pointerReorder || pointerReorder.pointerId !== event.pointerId) return;
+
+  const dx = event.clientX - pointerReorder.startX;
+  const dy = event.clientY - pointerReorder.startY;
+
+  if (!pointerReorder.moved && Math.hypot(dx, dy) < POINTER_REORDER_THRESHOLD) return;
+
+  pointerReorder.moved = true;
+  event.preventDefault();
+
+  cardEl.classList.add("touch-dragging");
+  cardEl.style.transform = `translate(${dx}px, ${dy}px) rotate(3deg)`;
+}
+
+function finishPointerReorder(event, cardEl) {
+  if (!pointerReorder || pointerReorder.pointerId !== event.pointerId) return;
+
+  const drag = pointerReorder;
+  pointerReorder = null;
+  cardEl.releasePointerCapture?.(event.pointerId);
+
+  if (!drag.moved) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+
+  suppressNextCardClick = true;
+  setTimeout(() => {
+    suppressNextCardClick = false;
+  }, 250);
+
+  const dropIndex = findCardIndexAtPoint(event.clientX, event.clientY, cardEl);
+  resetPointerDragStyles(cardEl);
+
+  if (dropIndex !== null && dropIndex !== drag.fromIndex) {
+    draggedCardIndex = drag.fromIndex;
+    reorderCurrentPlayerHand(dropIndex);
+  }
+}
+
+function cancelPointerReorder(event, cardEl) {
+  if (!pointerReorder || pointerReorder.pointerId !== event.pointerId) return;
+
+  pointerReorder = null;
+  cardEl.releasePointerCapture?.(event.pointerId);
+  resetPointerDragStyles(cardEl);
+}
+
+function findCardIndexAtPoint(clientX, clientY, draggedElement) {
+  const previousPointerEvents = draggedElement.style.pointerEvents;
+  draggedElement.style.pointerEvents = "none";
+
+  const targetCard = document
+    .elementFromPoint(clientX, clientY)
+    ?.closest(".hand.reorderable .card[data-card-index]");
+
+  draggedElement.style.pointerEvents = previousPointerEvents;
+
+  if (targetCard) return Number(targetCard.dataset.cardIndex);
+
+  const hand = document.querySelector(".hand.reorderable");
+  if (!hand) return null;
+
+  const handRect = hand.getBoundingClientRect();
+  const isInsideHand =
+    clientX >= handRect.left &&
+    clientX <= handRect.right &&
+    clientY >= handRect.top &&
+    clientY <= handRect.bottom;
+
+  if (!isInsideHand) return null;
+
+  const viewer = state?.game?.players?.[state.viewerPlayerIndex];
+  return viewer?.hand?.length ? viewer.hand.length - 1 : null;
+}
+
+function resetPointerDragStyles(cardEl) {
+  cardEl.classList.remove("touch-dragging");
+  cardEl.style.transform = "";
+}
+
 
 function canUseHand(playerIndex) {
   return state?.game?.roundStarted && playerIndex === state.viewerPlayerIndex && playerIndex === state.game.currentPlayerIndex;

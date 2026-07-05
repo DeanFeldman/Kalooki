@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: kalooki-online
+    env: node
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health

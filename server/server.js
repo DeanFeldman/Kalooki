@@ -89,8 +89,8 @@ server.on("upgrade", (request, socket) => {
   ws.onClose = () => handleDisconnect(ws);
 });
 
-server.listen(port, () => {
-  console.log(`Kalooki Phase 2 server running at http://localhost:${port}`);
+server.listen(port, "0.0.0.0", () => {
+  console.log(`Kalooki Phase 2 server running on port ${port}`);
 });
 
 function handleClientMessage(ws, rawMessage) {

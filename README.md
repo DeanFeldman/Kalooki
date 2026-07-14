@@ -2,6 +2,8 @@
 
 Kalooki Online is a browser-based multiplayer Kalooki card game built with Node.js, WebSockets, and JavaScript.
 
+Deployed Link: https://kalooki.onrender.com/ 
+
 The project started as a local playable prototype and has been upgraded into an online room-based version where players can create rooms, join using room codes, and play together in real time.
 
 ## Features

@@ -1,11 +1,12 @@
 import { Deck } from "./deck.js";
 import { cardValueFromRank } from "./card.js";
-import { isValidMeld, ROUND_RULES } from "./rules.js";
+import { canReplaceJoker, isCompleteSet, isValidMeld, ROUND_RULES } from "./rules.js";
 
 export class GameState {
   constructor(playerNames = ["Player 1", "Player 2"]) {
     this.playerNames = normalisePlayerNames(playerNames);
     this.players = this.playerNames.map(createPlayer);
+    this.nextMeldId = 0;
     this.deck = new Deck();
     this.discardPile = [];
     this.discardOwnerIndices = [];
@@ -16,6 +17,9 @@ export class GameState {
     this.gameFinished = false;
     this.hasDrawn = false;
     this.hasDiscarded = false;
+    this.cameDownThisTurn = false;
+    this.discardPenaltyApplied = false;
+    this.pendingJoker = null;
     this.topDiscardBuyable = false;
     this.lastMessage = "Create or join a room to begin.";
     this.winnerIndex = null;
@@ -33,11 +37,14 @@ export class GameState {
     if (this.roundStarted) return false;
 
     const names = normalisePlayerNames(playerNames);
-    const oldScores = new Map(this.players.map(player => [player.name, player.score]));
+    const oldPlayers = new Map(this.players.map(player => [player.name, player]));
     this.playerNames = names;
     this.players = names.map(name => {
       const player = createPlayer(name);
-      if (keepScores && oldScores.has(name)) player.score = oldScores.get(name);
+      if (keepScores && oldPlayers.has(name)) {
+        player.score = oldPlayers.get(name).score;
+        player.roundScores = [...oldPlayers.get(name).roundScores];
+      }
       return player;
     });
     this.currentPlayerIndex = Math.min(this.currentPlayerIndex, this.players.length - 1);
@@ -66,12 +73,16 @@ export class GameState {
     this.gameFinished = false;
     this.hasDrawn = false;
     this.hasDiscarded = false;
+    this.cameDownThisTurn = false;
+    this.discardPenaltyApplied = false;
+    this.pendingJoker = null;
     this.topDiscardBuyable = true;
     this.winnerIndex = null;
 
     for (const player of this.players) {
       player.hand = [];
       player.melds = [];
+      player.meldIds = [];
       player.hasComeDown = false;
       player.remainingRules = [...this.currentRules];
     }
@@ -106,6 +117,9 @@ export class GameState {
     this.gameFinished = false;
     this.hasDrawn = false;
     this.hasDiscarded = false;
+    this.cameDownThisTurn = false;
+    this.discardPenaltyApplied = false;
+    this.pendingJoker = null;
     this.topDiscardBuyable = false;
     this.winnerIndex = null;
     this.lastMessage = "New game created. Start the first round when ready.";
@@ -121,12 +135,16 @@ export class GameState {
     this.gameFinished = false;
     this.hasDrawn = false;
     this.hasDiscarded = false;
+    this.cameDownThisTurn = false;
+    this.discardPenaltyApplied = false;
+    this.pendingJoker = null;
     this.topDiscardBuyable = false;
     this.winnerIndex = null;
 
     for (const player of this.players) {
       player.hand = [];
       player.melds = [];
+      player.meldIds = [];
       player.hasComeDown = false;
       player.remainingRules = [...this.currentRules];
     }
@@ -175,9 +193,24 @@ export class GameState {
 
   discardCard(index) {
     if (!this.roundStarted || !this.hasDrawn || this.hasDiscarded) return false;
+    if (this.pendingJoker) {
+      this.lastMessage = "Play the reclaimed joker elsewhere on the table before discarding.";
+      return false;
+    }
 
     const player = this.getCurrP();
     if (!Number.isInteger(index) || index < 0 || index >= player.hand.length) return false;
+
+    const attemptedDiscard = player.hand[index];
+    if (this.cardFitsTable(attemptedDiscard)) {
+      this.refillDeckIfNeeded();
+      const penaltyCard = this.deck.draw();
+      if (penaltyCard) player.hand.push(penaltyCard);
+      this.hasDiscarded = true;
+      this.discardPenaltyApplied = true;
+      this.lastMessage = `${player.name}'s discard fits a meld: they kept ${cardLabel(attemptedDiscard)}${penaltyCard ? " and drew one penalty card" : "; no penalty card is available"}.`;
+      return true;
+    }
 
     const [card] = player.hand.splice(index, 1);
     this.discardPile.push(card);
@@ -194,7 +227,7 @@ export class GameState {
   }
 
   canComeDown(cardIndices) {
-    if (!this.roundStarted || !this.hasDrawn || this.hasDiscarded) return false;
+    if (!this.roundStarted || !this.hasDrawn || this.hasDiscarded || this.cameDownThisTurn) return false;
 
     const currentRule = this.currentRules[0]?.toLowerCase();
     if (currentRule !== "blitz") return true;
@@ -206,6 +239,10 @@ export class GameState {
 
   layDownMeld(cardIndices) {
     if (!this.roundStarted || !this.hasDrawn || this.hasDiscarded) return false;
+    if (this.cameDownThisTurn) {
+      this.lastMessage = "You came down this turn. Discard to finish your turn.";
+      return false;
+    }
     if (!Array.isArray(cardIndices) || cardIndices.length === 0) return false;
 
     const player = this.getCurrP();
@@ -213,19 +250,25 @@ export class GameState {
     if (cleanIndices.length === 0) return false;
 
     const selectedCards = cleanIndices.map(index => player.hand[index]);
+    if (this.pendingJoker && !selectedCards.includes(this.pendingJoker.card)) {
+      this.lastMessage = "Include the reclaimed joker in the next meld you play.";
+      return false;
+    }
     const currentRule = this.currentRules[0]?.toLowerCase();
 
-    if (currentRule === "blitz") {
+    if (currentRule === "blitz" && !player.hasComeDown) {
       if (!this.canComeDown(cleanIndices)) return false;
 
       const possibleMelds = splitIntoMelds(selectedCards);
       if (!possibleMelds) return false;
 
       removeCardsAtIndices(player.hand, cleanIndices);
-      player.melds.push(...possibleMelds);
+      possibleMelds.forEach(meld => this.addMeld(player, meld));
+      const closed = this.closeCompletedSets(this.currentPlayerIndex);
       player.hasComeDown = true;
+      this.cameDownThisTurn = true;
       player.remainingRules = [];
-      this.lastMessage = `${player.name} came down in Blitz.`;
+      this.lastMessage = `${player.name} came down in Blitz.${closed ? " Completed sets moved to discard." : ""}`;
 
       if (player.hand.length === 0) this.finishRound(this.currentPlayerIndex);
       return true;
@@ -238,20 +281,29 @@ export class GameState {
     if (!isValidMeld(selectedCards, ruleToCheck)) return false;
 
     removeCardsAtIndices(player.hand, cleanIndices);
-    player.melds.push(sortMeldForDisplay(selectedCards));
+    this.addMeld(player, sortMeldForDisplay(selectedCards));
+    if (this.pendingJoker && selectedCards.includes(this.pendingJoker.card)) this.pendingJoker = null;
+    const closed = this.closeCompletedSets(this.currentPlayerIndex);
 
     if (!player.hasComeDown && player.remainingRules.length > 0) {
       player.remainingRules.shift();
-      if (player.remainingRules.length === 0) player.hasComeDown = true;
+      if (player.remainingRules.length === 0) {
+        player.hasComeDown = true;
+        this.cameDownThisTurn = true;
+      }
     }
 
-    this.lastMessage = `${player.name} laid down a valid ${ruleToCheck} meld.`;
+    this.lastMessage = `${player.name} laid down a valid ${ruleToCheck} meld.${closed ? " Completed sets moved to discard." : ""}`;
     if (player.hasComeDown && player.hand.length === 0) this.finishRound(this.currentPlayerIndex);
     return true;
   }
 
   addCardToMeld(targetPlayerIndex, targetMeldIndex, cardHandIndex) {
     if (!this.roundStarted || !this.hasDrawn || this.hasDiscarded) return false;
+    if (this.cameDownThisTurn) {
+      this.lastMessage = "You came down this turn. Discard to finish your turn.";
+      return false;
+    }
 
     const currentPlayer = this.getCurrP();
     if (!currentPlayer.hasComeDown) return false;
@@ -261,25 +313,84 @@ export class GameState {
     const card = currentPlayer.hand[cardHandIndex];
     if (!targetPlayer || !targetMeld || !card) return false;
 
-    const frontTry = [card, ...targetMeld];
-    const backTry = [...targetMeld, card];
-    const sortedTry = sortMeldForDisplay([...targetMeld, card]);
-
-    if (isValidMeld(frontTry, "any")) {
-      targetPlayer.melds[targetMeldIndex] = sortMeldForDisplay(frontTry);
-    } else if (isValidMeld(backTry, "any")) {
-      targetPlayer.melds[targetMeldIndex] = sortMeldForDisplay(backTry);
-    } else if (isValidMeld(sortedTry, "any")) {
-      targetPlayer.melds[targetMeldIndex] = sortedTry;
-    } else {
+    if (this.pendingJoker && this.pendingJoker.card !== card) {
+      this.lastMessage = "Play the reclaimed joker before adding other cards.";
       return false;
     }
+    if (this.pendingJoker?.card === card && this.pendingJoker.sourceMeld === targetMeld) {
+      this.lastMessage = "The reclaimed joker must be played in a different meld.";
+      return false;
+    }
+    const sortedTry = sortMeldForDisplay([...targetMeld, card]);
+    if (!isValidMeld(sortedTry, "any")) return false;
+    targetMeld.splice(0, targetMeld.length, ...sortedTry);
 
     currentPlayer.hand.splice(cardHandIndex, 1);
-    this.lastMessage = `${currentPlayer.name} added a card to a meld.`;
+    if (this.pendingJoker?.card === card) this.pendingJoker = null;
+    const closed = this.closeCompletedSets(targetPlayerIndex);
+    this.lastMessage = `${currentPlayer.name} added a card to a meld.${closed ? " Completed set moved to discard." : ""}`;
 
     if (currentPlayer.hand.length === 0) this.finishRound(this.currentPlayerIndex);
     return true;
+  }
+
+  replaceJoker(targetPlayerIndex, targetMeldIndex, jokerIndex, cardHandIndex) {
+    if (!this.roundStarted || !this.hasDrawn || this.hasDiscarded || this.cameDownThisTurn) return false;
+    const player = this.getCurrP();
+    if (!player.hasComeDown) return false;
+    if (this.pendingJoker) {
+      this.lastMessage = "Play the reclaimed joker before replacing another one.";
+      return false;
+    }
+    const meld = this.players[targetPlayerIndex]?.melds?.[targetMeldIndex];
+    const replacement = player.hand[cardHandIndex];
+    if (!canReplaceJoker(meld, jokerIndex, replacement)) {
+      this.lastMessage = "Select the natural card that correctly replaces that joker.";
+      return false;
+    }
+    const joker = meld[jokerIndex];
+    if (!this.canReplayJoker(joker, meld, replacement)) {
+      this.lastMessage = "That joker needs a legal place in a different meld before you can reclaim it.";
+      return false;
+    }
+    meld[jokerIndex] = replacement;
+    meld.splice(0, meld.length, ...sortMeldForDisplay(meld));
+    player.hand.splice(cardHandIndex, 1, joker);
+    this.pendingJoker = { card: joker, sourceMeld: meld };
+    const closed = this.closeCompletedSets(targetPlayerIndex);
+    this.lastMessage = `${player.name} replaced a joker. Play it in a different meld before discarding.${closed ? " Completed set moved to discard." : ""}`;
+    return true;
+  }
+
+  canReplayJoker(joker, sourceMeld, replacement) {
+    if (this.players.some(player => player.melds.some(meld => meld !== sourceMeld && isValidMeld([...meld, joker], "any")))) return true;
+    const hand = this.getCurrP().hand.filter(card => card !== replacement);
+    for (let first = 0; first < hand.length; first++) {
+      for (let second = first + 1; second < hand.length; second++) {
+        if (isValidMeld([joker, hand[first], hand[second]], "any")) return true;
+      }
+    }
+    return false;
+  }
+
+  closeCompletedSets(playerIndex) {
+    const melds = this.players[playerIndex].melds;
+    let closed = 0;
+    for (let index = melds.length - 1; index >= 0; index--) {
+      if (!isCompleteSet(melds[index])) continue;
+      const [cards] = melds.splice(index, 1);
+      this.players[playerIndex].meldIds.splice(index, 1);
+      this.discardPile.push(...cards);
+      this.discardOwnerIndices.push(...cards.map(() => this.currentPlayerIndex));
+      this.topDiscardBuyable = true;
+      closed++;
+    }
+    return closed;
+  }
+
+  addMeld(player, cards) {
+    player.melds.push(cards);
+    player.meldIds.push(this.nextMeldId++);
   }
 
 canBuyDiscard(playerIndex) {
@@ -334,13 +445,23 @@ reorderHand(playerIndex, fromIndex, toIndex) {
     return true;
   }
 
-  nextP() {
+  nextP({ preserveMessage = false } = {}) {
     if (!this.roundStarted || this.betweenRounds || this.gameFinished) return;
+    if (this.pendingJoker) return;
 
     this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.players.length;
     this.hasDrawn = false;
     this.hasDiscarded = false;
-    this.lastMessage = `${this.getCurrP().name}'s turn.`;
+    this.cameDownThisTurn = false;
+    this.discardPenaltyApplied = false;
+    this.pendingJoker = null;
+    if (!preserveMessage) this.lastMessage = `${this.getCurrP().name}'s turn.`;
+  }
+
+  cardFitsTable(card) {
+    return this.players.some(player => player.melds.some(meld =>
+      isValidMeld([...meld, card], "any") || meld.some((_, index) => canReplaceJoker(meld, index, card))
+    ));
   }
 
   cardValue(card) {
@@ -348,18 +469,25 @@ reorderHand(playerIndex, fromIndex, toIndex) {
   }
 
   finishRound(winnerIndex) {
+    if (this.pendingJoker) return;
     this.winnerIndex = winnerIndex;
     const winnerName = this.players[winnerIndex]?.name ?? "Unknown";
 
     for (let i = 0; i < this.players.length; i++) {
-      if (i === winnerIndex) continue;
-      this.players[i].score += this.players[i].hand.reduce((sum, card) => sum + this.cardValue(card), 0);
+      const player = this.players[i];
+      const points = i === winnerIndex ? 0 : player.hand.reduce((sum, card) => sum + this.cardValue(card), 0);
+      player.score += points;
+      // A host can replay a round; include every penalty in that round's row.
+      player.roundScores[this.currentRound] = (player.roundScores[this.currentRound] ?? 0) + points;
     }
 
     this.roundStarted = false;
     this.betweenRounds = true;
     this.hasDrawn = false;
     this.hasDiscarded = false;
+    this.cameDownThisTurn = false;
+    this.discardPenaltyApplied = false;
+    this.pendingJoker = null;
     this.topDiscardBuyable = false;
     this.currentRound += 1;
 
@@ -391,9 +519,11 @@ function createPlayer(name) {
     name,
     hand: [],
     melds: [],
+    meldIds: [],
     hasComeDown: false,
     remainingRules: [],
-    score: 0
+    score: 0,
+    roundScores: []
   };
 }
 

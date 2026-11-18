@@ -2,94 +2,90 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Kalooki Online</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#102820">
+  <title>Kalooki</title>
   <link rel="stylesheet" href="/client/style.css">
 </head>
 <body>
+  <section class="rotate-screen" aria-labelledby="rotateTitle">
+    <div class="rotate-icon" aria-hidden="true">▯ ↻</div>
+    <p class="eyebrow">Kalooki</p>
+    <h1 id="rotateTitle">Rotate your phone<br>to play.</h1>
+    <p>A little more room for a good hand.<br>Turn your phone sideways to take your seat.</p>
+    <small>Your table stays connected while you rotate.</small>
+  </section>
   <main class="app-shell">
-    <header class="hero">
-      <div>
-        <p class="eyebrow">Online Card Game</p>
-        <h1>Kalooki</h1>
-        <p id="roundText" class="round-text">Create or join a room to begin.</p>
-      </div>
-      <div class="hero-card">
-        <span>Deck</span>
-        <strong id="deckCount">0</strong>
-        <small>cards left</small>
-      </div>
+    <header class="topbar">
+      <div class="brand"><span aria-hidden="true">♠</span><h1>Kalooki</h1></div>
+      <p id="roundText" class="round-text">Create or join a room to begin.</p>
+      <nav class="table-menu" aria-label="Table menus">
+        <button id="pointsButton" type="button" class="hidden" aria-haspopup="dialog" aria-controls="pointsDialog">Points</button>
+        <button id="settingsButton" type="button" class="hidden" aria-haspopup="dialog" aria-controls="settingsDialog">Settings</button>
+        <button id="leaveRoomButton" type="button" class="danger hidden">Leave</button>
+      </nav>
     </header>
 
-    <section id="lobbyPanel" class="panel lobby-panel" aria-label="Room setup">
-      <div class="lobby-field">
-        <label for="playerNameInput">Your name</label>
-        <input id="playerNameInput" type="text" value="Dean" maxlength="24" autocomplete="nickname">
-      </div>
-      <div class="lobby-field">
-        <label for="roomCodeInput">Room code</label>
-        <input id="roomCodeInput" type="text" placeholder="Example: A1B2C3" maxlength="8" autocomplete="off">
-      </div>
-      <button id="createRoomButton" type="button" class="primary">Create Room</button>
-      <button id="joinRoomButton" type="button">Join Room</button>
-    </section>
-
-    <section id="roomPanel" class="panel room-panel hidden" aria-label="Room information">
-      <div>
-        <p class="label">Room code</p>
-        <strong id="roomCodeText">—</strong>
-      </div>
-      <div>
-        <p class="label">You are</p>
-        <strong id="viewerText">—</strong>
-      </div>
-      <div>
-        <p class="label">Connection</p>
-        <strong id="connectionText">Offline</strong>
-      </div>
-      <button id="copyRoomButton" type="button">Copy Invite Link</button>
-      <button id="leaveRoomButton" type="button" class="danger">Leave Room</button>
-    </section>
-
-    <section class="panel setup-panel" aria-label="Host controls">
-      <label>
-        Round
-        <select id="roundSelect"></select>
-      </label>
-      <button id="jumpRoundButton" type="button">Jump to Round</button>
-      <button id="resetButton" type="button" class="danger">New Game</button>
-      <p id="hostHint" class="host-hint">Host controls unlock after you create a room.</p>
-    </section>
-
-    <section class="panel controls" aria-label="Game controls">
-      <button id="startRoundButton" type="button" class="primary">Start Round</button>
-      <button id="drawButton" type="button">Draw from Deck</button>
-      <button id="pickDiscardButton" type="button">Pick Up Discard</button>
-      <button id="discardButton" type="button">Discard Selected</button>
-      <button id="comeDownButton" type="button">Come Down / Lay Meld</button>
-    </section>
-
-    <section class="table-area">
-      <aside class="discard-zone" aria-label="Discard pile">
-        <p>Discard pile</p>
-        <div id="discardPile" class="discard-card empty">Empty</div>
-        <small id="buyHint">Buying is not available yet.</small>
-      </aside>
-
-      <section class="status-zone" aria-live="polite">
-        <h2 id="turn">Current turn: Not started</h2>
-        <p id="statusText">Create or join a room first.</p>
+    <section class="table-stage" aria-label="Shared card table">
+      <div class="felt" aria-hidden="true"><span>KALOOKI<br><small>GOOD CARDS. GOOD COMPANY.</small></span></div>
+      <section id="players" aria-label="Players around the table"></section>
+      <section id="lobbyPanel" class="lobby-panel" aria-label="Room setup">
+        <p class="eyebrow">A seat at the table</p><h2>Deal yourself in.</h2>
+        <p>Create a private room or join your friends.</p>
+        <div class="lobby-fields">
+          <label for="playerNameInput">Your name<input id="playerNameInput" type="text" value="Dean" maxlength="24" autocomplete="nickname"></label>
+          <label for="roomCodeInput">Room code<input id="roomCodeInput" type="text" placeholder="A1B2C3" maxlength="8" autocomplete="off"></label>
+        </div>
+        <div class="lobby-actions"><button id="createRoomButton" type="button" class="primary">Create Room</button><button id="joinRoomButton" type="button">Join Room</button></div>
+      </section>
+      <section id="tableCenter" class="table-center hidden" aria-label="Shared piles and melds">
+        <div class="piles">
+          <button id="drawPileButton" type="button" class="pile pile-button" aria-label="Draw from the deck" disabled><span class="card back deck-art" aria-hidden="true">♠</span><span>DRAW <strong id="deckCount">0</strong></span></button>
+          <button id="discardPileButton" type="button" class="pile pile-button" aria-label="Pick up the top discard" disabled><span id="discardPile" class="discard-card empty">Empty</span><span>DISCARD</span></button>
+        </div>
+      </section>
+      <section class="meld-zone hidden" aria-label="Played melds"><div id="tableMelds" class="table-melds"></div></section>
+      <section id="roundCelebration" class="round-celebration hidden" role="status" aria-live="polite" aria-atomic="true">
+        <div id="winnerConfetti" class="winner-confetti" aria-hidden="true"></div>
+        <div class="winner-banner"><span class="winner-icon" aria-hidden="true">🏆</span><div><p id="winnerRound" class="eyebrow"></p><h2 id="roundWinnerName"></h2></div><button id="dismissWinnerButton" type="button" aria-label="Dismiss round winner">✕</button></div>
       </section>
     </section>
 
-    <section id="players" class="players-grid" aria-label="Players"></section>
-
-    <!-- <section class="panel notes">
-      <h2>Phase 2 prototype</h2>
-      <p>The server owns the room and game state. Each browser only sends moves and receives its own safe view of the table. Other players' hands are hidden.</p>
-    </section> -->
+    <section class="hand-dock" aria-label="Your hand and game actions">
+      <div class="hand-toolbar"><strong id="handTitle">Your hand</strong><span id="selectionText"></span><button id="fullscreenButton" type="button" hidden>Enter fullscreen</button></div>
+      <div id="localHand" class="hand" tabindex="0" aria-label="Your cards; scroll horizontally to see more"></div>
+      <div class="action-bar">
+        <div class="action-feedback"><p id="statusText" role="status" aria-live="polite">Create or join a room first.</p></div>
+        <div class="controls" aria-label="Game controls">
+          <button id="startRoundButton" type="button" class="primary">Start Round</button>
+          <button id="drawButton" type="button">Draw</button>
+          <button id="pickDiscardButton" type="button">Take discard</button>
+          <button id="buyButton" type="button" title="Buy the top discard out of turn">Buy discard</button>
+          <button id="comeDownButton" type="button" class="primary" title="Come down or lay a meld with selected cards">Play meld</button>
+          <button id="discardButton" type="button">Discard</button>
+        </div>
+      </div>
+    </section>
   </main>
 
+  <dialog id="pointsDialog" aria-labelledby="pointsDialogTitle">
+    <div class="dialog-heading"><h2 id="pointsDialogTitle">Points</h2><button id="closePointsButton" type="button" aria-label="Close points">✕</button></div>
+    <p class="help-text">Penalty points per round. Lowest total wins. Unfinished rounds show —.</p>
+    <div id="scoreboard" class="scoreboard" role="region" tabindex="0" aria-label="Player points"></div>
+  </dialog>
+
+  <dialog id="settingsDialog" aria-labelledby="settingsDialogTitle">
+    <div class="dialog-heading"><h2 id="settingsDialogTitle">Settings</h2><button id="closeSettingsButton" type="button" aria-label="Close settings">✕</button></div>
+    <section id="roomPanel" class="room-panel hidden" aria-label="Room information">
+      <div><p class="label">Room code</p><strong id="roomCodeText">—</strong></div>
+      <button id="copyRoomButton" type="button">Copy Invite Link</button>
+    </section>
+    <p class="connection">Connection <strong id="connectionText">Offline</strong></p>
+    <section class="setup-panel" aria-label="Host controls">
+      <label for="roundSelect">Round<select id="roundSelect"></select></label>
+      <button id="jumpRoundButton" type="button">Jump to Round</button><button id="resetButton" type="button" class="danger">New Game</button>
+    </section>
+  </dialog>
   <script type="module" src="/client/ui.js"></script>
 </body>
 </html>

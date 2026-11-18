@@ -133,7 +133,7 @@ function handleClientMessage(ws, rawMessage) {
       case "discard":
         applyTurnAction(ws, room => {
           const ok = room.game.discardCard(Number(payload.cardIndex));
-          if (ok && room.game.roundStarted) room.game.nextP();
+          if (ok && room.game.roundStarted) room.game.nextP({ preserveMessage: room.game.discardPenaltyApplied });
           return ok;
         });
         break;
@@ -153,6 +153,14 @@ function handleClientMessage(ws, rawMessage) {
           if (playerIndex < 0) return false;
           return Boolean(room.game.buyDiscardOutOfTurn(playerIndex));
         });
+        break;
+      case "replaceJoker":
+        applyTurnAction(ws, room => room.game.replaceJoker(
+          Number(payload.targetPlayerIndex),
+          Number(payload.targetMeldIndex),
+          Number(payload.jokerIndex),
+          Number(payload.cardHandIndex)
+        ));
         break;
       case "reorderHand":
         applyRoomAction(ws, room => {
@@ -364,9 +372,11 @@ function buildRoomView(room, viewerPlayerId) {
     return {
       name: player.name,
       score: player.score,
+      roundScores: player.roundScores,
       hasComeDown: player.hasComeDown,
       remainingRules: player.remainingRules,
       melds: player.melds,
+      meldIds: player.meldIds,
       hand: isViewer ? player.hand : [],
       handCount: player.hand.length,
       isViewer,
@@ -379,9 +389,11 @@ function buildRoomView(room, viewerPlayerId) {
     return {
       name: seat.name,
       score: player?.score ?? 0,
+      roundScores: player?.roundScores ?? [],
       hasComeDown: false,
       remainingRules: [],
       melds: [],
+      meldIds: [],
       hand: [],
       handCount: 0,
       isViewer: seat.playerId === viewerPlayerId,
@@ -412,6 +424,13 @@ function buildRoomView(room, viewerPlayerId) {
       currentPlayerIndex: game.currentPlayerIndex,
       hasDrawn: game.hasDrawn,
       hasDiscarded: game.hasDiscarded,
+      cameDownThisTurn: game.cameDownThisTurn,
+      mustReplayJoker: Boolean(game.pendingJoker),
+      requiredJokerIndex: viewerPlayerIndex === game.currentPlayerIndex && game.pendingJoker
+        ? game.getCurrP().hand.indexOf(game.pendingJoker.card) : null,
+      jokerReplaySource: game.pendingJoker ? game.players.flatMap((player, playerIndex) =>
+        player.melds.map((meld, meldIndex) => meld === game.pendingJoker.sourceMeld ? { playerIndex, meldIndex } : null)
+      ).find(Boolean) ?? null : null,
       topDiscardBuyable: game.topDiscardBuyable,
       canViewerBuyDiscard: game.canBuyDiscard(viewerPlayerIndex),
       lastMessage: game.lastMessage,

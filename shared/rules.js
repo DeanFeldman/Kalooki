@@ -44,7 +44,7 @@ export function isValidMeld(cards, rule = "any") {
 }
 
 export function isRun(cards) {
-  if (!Array.isArray(cards) || cards.length < 3) return false;
+  if (!Array.isArray(cards) || cards.length < 3 || cards.length > 13) return false;
 
   const jokers = cards.filter(isJoker);
   const normalCards = cards.filter(card => !isJoker(card));
@@ -77,6 +77,16 @@ export function isSet(cards) {
   }
 
   return true;
+}
+
+export function isCompleteSet(cards) {
+  return Array.isArray(cards) && cards.length === 4 && cards.every(card => !isJoker(card)) && isSet(cards);
+}
+
+export function canReplaceJoker(meld, jokerIndex, replacement) {
+  if (!Array.isArray(meld) || !Number.isInteger(jokerIndex) || !isJoker(meld[jokerIndex])) return false;
+  if (!replacement || isJoker(replacement)) return false;
+  return isValidMeld(meld.map((card, index) => index === jokerIndex ? replacement : card), "any");
 }
 
 function isJoker(card) {

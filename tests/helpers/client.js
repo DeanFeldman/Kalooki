@@ -42,10 +42,12 @@ export function openClient(search = "", savedRoom, savedPlayerId) {
     addEventListener(type, listener) { this.handlers[type] = listener; }
     setAttribute(name, value) { this.attributes[name] = value; }
     appendChild(child) { this.children.push(child); child.parentElement = this; }
+    append(...children) { children.forEach(child => this.appendChild(child)); }
     replaceChildren(...children) { this.children = children; }
     set innerHTML(value) { this.markup = value; this.children = []; }
     get innerHTML() { return this.markup ?? ""; }
-    click() { if (!this.disabled) this.handlers.click?.(); }
+    click() { if (!this.disabled) this.handlers.click?.({ preventDefault() {}, stopPropagation() {} }); }
+    closest() { return this; }
     close() { this.open = false; }
   }
   class Socket {
@@ -64,11 +66,17 @@ export function openClient(search = "", savedRoom, savedPlayerId) {
         if (!elements.has(id)) {
           const element = new Element();
           if (id === "roundCelebration") element.classList.add("hidden");
+          if (id === "tableMelds") element.parentElement = new Element("section");
           elements.set(id, element);
         }
         return elements.get(id);
       },
       createElement: tagName => new Element(tagName),
+      elementFromPoint() { return elements.get("pointerDropTarget") ?? null; },
+      querySelector(selector) {
+        if (!elements.has(selector)) elements.set(selector, new Element());
+        return elements.get(selector);
+      },
       addEventListener() {}
     },
     window: { addEventListener() {} },

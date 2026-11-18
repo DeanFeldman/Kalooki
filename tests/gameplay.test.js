@@ -185,7 +185,7 @@ function multiplayer(game) {
   const context = createContext({ rooms: new Map([["TEST", room]]), ROUND_RULES, console });
   runInContext(`function handleClientMessage(ws, rawMessage) {${serverHandlers}`, context);
   const send = (index, type, payload) => context.handleClientMessage(sockets[index], JSON.stringify({ type, payload }));
-  return { sockets, send };
+  return { sockets, send, disconnect: index => context.handleDisconnect(sockets[index]) };
 }
 
 test("four-player server broadcasts enforce coming down, penalties, and turn advancement", () => {
@@ -405,4 +405,23 @@ test("four-player joker swap state survives rejoin and keeps opponents' hands hi
   assert.equal(game.players[2].melds[0].includes(joker), true);
   send(0, "discard", { cardIndex: 0 });
   assert.equal(game.currentPlayerIndex, 1);
+});
+
+test("buy approval broadcasts are scoped to the next player and cancel on disconnect", () => {
+  const game = freshGame(1, 4);
+  const { sockets, send, disconnect } = multiplayer(game);
+  send(3, "buyDiscard");
+  const id = game.pendingBuy.id;
+  assert.equal(sockets[1].messages.at(-1).state.game.pendingBuy.canViewerRespond, true);
+  assert.equal(sockets[2].messages.at(-1).state.game.pendingBuy.canViewerRespond, false);
+  send(2, "respondToBuy", { requestId: id, decision: "pass" });
+  assert.deepEqual(game.pendingBuy.approvedIndices, []);
+  send(1, "respondToBuy", { requestId: id, decision: "pass" });
+  assert.equal(sockets[2].messages.at(-1).state.game.pendingBuy.canViewerRespond, true);
+  const count = game.players[3].hand.length;
+  disconnect(2);
+  assert.equal(game.pendingBuy, null);
+  assert.equal(game.players[3].hand.length, count);
+  assert.equal(game.players[2].connected, undefined);
+  assert.equal(sockets[0].messages.at(-1).state.game.players[2].connected, false);
 });

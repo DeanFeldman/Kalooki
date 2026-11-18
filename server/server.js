@@ -151,8 +151,19 @@ function handleClientMessage(ws, rawMessage) {
         applyRoomAction(ws, room => {
           const playerIndex = getPlayerIndex(room, ws.session.playerId);
           if (playerIndex < 0) return false;
-          return Boolean(room.game.buyDiscardOutOfTurn(playerIndex));
+          const result = room.game.buyDiscardOutOfTurn(playerIndex);
+          if (room.game.pendingBuy?.approverIndices.some(index => !room.seats[index]?.connected)) {
+            room.game.pendingBuy = null;
+            room.game.lastMessage = "A player ahead is offline. The buy needs their approval.";
+            return false;
+          }
+          return Boolean(result);
         });
+        break;
+      case "respondToBuy":
+        applyRoomAction(ws, room => room.game.respondToBuy(
+          getPlayerIndex(room, ws.session.playerId), Number(payload.requestId), payload.decision
+        ));
         break;
       case "replaceJoker":
         applyTurnAction(ws, room => room.game.replaceJoker(
@@ -259,6 +270,7 @@ function rejoinRoom(ws, payload) {
   }
 
   seat.connected = true;
+  room.game.lastMessage = `${seat.name} rejoined the room.`;
   room.sockets.set(playerId, ws);
   ws.session = { roomCode, playerId };
   ws.send({
@@ -311,6 +323,10 @@ function applyTurnAction(ws, action, options = {}) {
       if (!options.quiet) room.game.lastMessage = "It is not your turn.";
       return false;
     }
+    if (room.game.pendingBuy) {
+      room.game.lastMessage = "Resolve the discard request in seat order first.";
+      return false;
+    }
     return action(room);
   });
 }
@@ -337,6 +353,7 @@ function getRoomForSocket(ws) {
 function handleDisconnect(ws) {
   const room = getRoomForSocket(ws);
   if (!room || !ws.session?.playerId) return;
+  if (room.sockets.get(ws.session.playerId) !== ws) return;
 
   const seat = room.seats.find(candidate => candidate.playerId === ws.session.playerId);
   if (seat) seat.connected = false;
@@ -345,6 +362,12 @@ function handleDisconnect(ws) {
   }
 
   room.game.lastMessage = seat ? `${seat.name} disconnected. They can rejoin with the same browser.` : "A player disconnected.";
+  const disconnectedIndex = getPlayerIndex(room, ws.session.playerId);
+  const request = room.game.pendingBuy;
+  if (request && (request.buyerIndex === disconnectedIndex || request.approverIndices.includes(disconnectedIndex))) {
+    room.game.pendingBuy = null;
+    room.game.lastMessage += " The buy request was cancelled.";
+  }
   broadcastRoom(room);
 
   if (room.sockets.size === 0) {
@@ -433,6 +456,15 @@ function buildRoomView(room, viewerPlayerId) {
       ).find(Boolean) ?? null : null,
       topDiscardBuyable: game.topDiscardBuyable,
       canViewerBuyDiscard: game.canBuyDiscard(viewerPlayerIndex),
+      pendingBuy: game.pendingBuy ? {
+        id: game.pendingBuy.id,
+        buyerIndex: game.pendingBuy.buyerIndex,
+        approverIndices: game.pendingBuy.approverIndices,
+        approvedIndices: game.pendingBuy.approvedIndices,
+        nextApproverIndex: game.pendingBuy.approverIndices.find(index => !game.pendingBuy.approvedIndices.includes(index)),
+        canViewerRespond: viewerPlayerIndex === game.pendingBuy.approverIndices.find(index => !game.pendingBuy.approvedIndices.includes(index)),
+        canViewerCancel: viewerPlayerIndex === game.pendingBuy.buyerIndex
+      } : null,
       lastMessage: game.lastMessage,
       winnerIndex: game.winnerIndex,
       deckCount: game.deck.size(),

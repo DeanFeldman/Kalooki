@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Kalooki responsive preview</title>
+<style>
+  body { margin: 0; width: max-content; background: #10231e; }
+  iframe { display: block; border: 0; }
+  button { min-height: 44px; margin: 8px; }
+</style>
+<iframe id="gamePreview" title="Kalooki responsive preview"></iframe>
+<button id="rotatePreview" type="button">Rotate test viewport</button>
+<script>
+  // A real iframe viewport for checking responsive CSS without changing the game.
+  const params = new URLSearchParams(location.search);
+  const frame = document.getElementById("gamePreview");
+  frame.width = String(Math.max(280, Math.min(1920, Number(params.get("width")) || 844)));
+  frame.height = String(Math.max(280, Math.min(1200, Number(params.get("height")) || 390)));
+  const game = new URL("/", location.href);
+  if (params.get("room")) game.searchParams.set("room", params.get("room"));
+  frame.src = game.href;
+  document.getElementById("rotatePreview").addEventListener("click", () => {
+    const width = frame.width;
+    frame.width = frame.height;
+    frame.height = width;
+  });
+</script>
+</html>

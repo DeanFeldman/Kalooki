@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server/server.js",
     "dev": "node server/server.js",
-    "test": "node tests/rules.test.js && node --test tests/invite.test.js tests/gameplay.test.js tests/client-actions.test.js"
+    "test": "node tests/rules.test.js && node --test tests/invite.test.js tests/gameplay.test.js tests/client-actions.test.js tests/buy.test.js"
   },
   "keywords": ["kalooki", "cards", "javascript", "browser-game", "websocket", "multiplayer"],
   "author": "",

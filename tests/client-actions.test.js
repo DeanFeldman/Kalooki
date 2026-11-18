@@ -107,3 +107,85 @@ test("final-round animation honours the round winner rather than the lowest tota
   assert.equal(client.elements.get("winnerRound").textContent, "Round 7 winner");
   assert.equal(client.elements.get("roundCelebration").classList.contains("hidden"), false);
 });
+
+test("buy approval controls show first refusal, preserve request IDs, and freeze pickups", () => {
+  const client = connectedClient();
+  const state = roomState({ pendingBuy: {
+    id: 7, buyerIndex: 1, nextApproverIndex: 0, canViewerRespond: true, canViewerCancel: false
+  } });
+  receive(client, state);
+  runInContext("renderBuyRequest()", client.context);
+  assert.equal(client.elements.get("buyRequestPanel").classList.contains("hidden"), false);
+  assert.equal(client.elements.get("passBuyButton").classList.contains("hidden"), false);
+  assert.equal(client.elements.get("cancelBuyButton").classList.contains("hidden"), true);
+  assert.equal(client.elements.get("takeBuyButton").textContent, "Take card");
+  assert.equal(client.elements.get("drawPileButton").disabled, true);
+  assert.equal(client.elements.get("discardPileButton").disabled, true);
+  client.elements.get("passBuyButton").click();
+  assert.deepEqual(client.sockets[0].sent.at(-1), { type: "respondToBuy", payload: { requestId: 7, decision: "pass" } });
+  client.elements.get("takeBuyButton").click();
+  assert.equal(client.sockets[0].sent.at(-1).payload.decision, "take");
+  receive(client, roomState());
+  runInContext("renderBuyRequest()", client.context);
+  assert.equal(client.elements.get(".controls").classList.contains("hidden"), false);
+});
+
+test("requester can cancel and later approvers see the extra-card price", () => {
+  const client = connectedClient();
+  receive(client, roomState({ pendingBuy: { id: 8, buyerIndex: 0, nextApproverIndex: 1, canViewerRespond: false, canViewerCancel: true } }));
+  runInContext("renderBuyRequest()", client.context);
+  assert.equal(client.elements.get("cancelBuyButton").classList.contains("hidden"), false);
+  client.elements.get("cancelBuyButton").click();
+  assert.equal(client.sockets[0].sent.at(-1).payload.decision, "cancel");
+  receive(client, roomState({ currentPlayerIndex: 1, pendingBuy: { id: 9, buyerIndex: 1, nextApproverIndex: 0, canViewerRespond: true } }));
+  runInContext("renderBuyRequest()", client.context);
+  assert.equal(client.elements.get("takeBuyButton").textContent, "Buy +1");
+});
+
+test("player nameplates omit points while keeping names, connection state and card counts", () => {
+  const client = connectedClient();
+  const state = roomState();
+  state.seats = [{ isHost: true }, {}];
+  state.game.players.forEach((player, index) => Object.assign(player, {
+    connected: true, isViewer: index === 0, handCount: 13, remainingRules: [], melds: []
+  }));
+  receive(client, state);
+  runInContext("renderPlayers()", client.context);
+  const occupied = client.elements.get("players").children.filter(child => child.dataset.playerIndex !== undefined);
+  assert.equal(occupied.length, 2);
+  for (const seat of occupied) {
+    assert.doesNotMatch(seat.innerHTML, /\bpts\b|\bpoints\b/);
+    assert.match(seat.innerHTML, /13 cards/);
+  }
+});
+
+test("touch dragging reorders without accidentally selecting a card", () => {
+  const client = connectedClient();
+  receive(client, roomState());
+  const dragged = runInContext('createCardElement({rank:"3",suit:"Clubs"},{cardIndex:0,selectable:true,draggable:true,onClick:()=>toggleSelectedCard(0)})', client.context);
+  const target = runInContext('createCardElement({rank:"4",suit:"Clubs"},{cardIndex:1})', client.context);
+  client.elements.set("pointerDropTarget", target);
+  const pointer = (x, y) => ({ pointerId: 1, pointerType: "touch", clientX: x, clientY: y, preventDefault() {}, stopPropagation() {} });
+  dragged.handlers.pointerdown(pointer(20, 20));
+  dragged.handlers.pointermove(pointer(80, 20));
+  dragged.handlers.pointerup(pointer(80, 20));
+  assert.deepEqual(client.sockets[0].sent.at(-1), { type: "reorderHand", payload: { fromIndex: 0, toIndex: 1 } });
+  dragged.click();
+  assert.equal(runInContext("selectedCardIndices.length", client.context), 0);
+});
+
+test("a touch tap selects while a cancelled drag does not reorder", () => {
+  const client = connectedClient();
+  receive(client, roomState());
+  const card = runInContext('createCardElement({rank:"3",suit:"Clubs"},{cardIndex:0,selectable:true,draggable:true,onClick:()=>toggleSelectedCard(0)})', client.context);
+  const pointer = { pointerId: 1, pointerType: "touch", clientX: 20, clientY: 20, preventDefault() {}, stopPropagation() {} };
+  card.handlers.pointerdown(pointer);
+  card.handlers.pointerup(pointer);
+  card.click();
+  assert.equal(runInContext("selectedCardIndices[0]", client.context), 0);
+  card.handlers.pointerdown(pointer);
+  card.handlers.pointermove({ ...pointer, clientX: 90 });
+  card.handlers.pointercancel(pointer);
+  assert.equal(card.classList.contains("touch-dragging"), false);
+  assert.deepEqual(client.sockets[0].sent, []);
+});

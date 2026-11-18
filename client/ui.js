@@ -41,7 +41,12 @@ const els = {
   pointsDialog: document.getElementById("pointsDialog"),
   settingsBtn: document.getElementById("settingsButton"),
   settingsDialog: document.getElementById("settingsDialog"),
-  buyBtn: document.getElementById("buyButton")
+  buyBtn: document.getElementById("buyButton"),
+  buyRequestPanel: document.getElementById("buyRequestPanel"),
+  buyRequestText: document.getElementById("buyRequestText"),
+  passBuyBtn: document.getElementById("passBuyButton"),
+  takeBuyBtn: document.getElementById("takeBuyButton"),
+  cancelBuyBtn: document.getElementById("cancelBuyButton")
 };
 
 let socket = null;
@@ -80,6 +85,11 @@ els.settingsBtn.addEventListener("click", () => {
 document.getElementById("closePointsButton").addEventListener("click", () => els.pointsDialog.close());
 document.getElementById("closeSettingsButton").addEventListener("click", () => els.settingsDialog.close());
 els.buyBtn.addEventListener("click", () => send("buyDiscard"));
+for (const [button, decision] of [[els.passBuyBtn, "pass"], [els.takeBuyBtn, "take"], [els.cancelBuyBtn, "cancel"]]) {
+  button.addEventListener("click", () => {
+    if (state?.game?.pendingBuy) send("respondToBuy", { requestId: state.game.pendingBuy.id, decision });
+  });
+}
 document.getElementById("dismissWinnerButton").addEventListener("click", hideRoundCelebration);
 const fullscreenButton = document.getElementById("fullscreenButton");
 fullscreenButton.hidden = !document.fullscreenEnabled;
@@ -92,7 +102,9 @@ fullscreenButton.addEventListener("click", async () => {
   }
 });
 document.addEventListener("fullscreenchange", () => {
-  fullscreenButton.textContent = document.fullscreenElement ? "Exit fullscreen" : "Enter fullscreen";
+  const label = document.fullscreenElement ? "Exit fullscreen" : "Enter fullscreen";
+  fullscreenButton.setAttribute("aria-label", label);
+  fullscreenButton.title = label;
 });
 
 els.createRoomBtn.addEventListener("click", () => {
@@ -316,6 +328,7 @@ function render() {
   renderDiscardPile();
   renderPlayers();
   renderScoreboard();
+  renderBuyRequest();
   updateButtons();
 }
 
@@ -409,11 +422,11 @@ function renderPlayers() {
     article.className = `player-seat seat-${position}${active ? " active" : ""}${player.isViewer ? " viewer" : ""}${!player.connected ? " disconnected" : ""}`;
     article.dataset.playerIndex = playerIndex;
     const presenceText = !player.connected ? "Offline, seat saved" : state.game.roundStarted ? "Online" : "Online, ready";
-    const details = `${player.name}${player.isViewer ? ", you" : ""}${seat?.isHost ? ", host" : ""}. ${presenceText}${active ? ". Current turn" : ""}. ${player.score} points. ${player.handCount} cards. ${playerStatusText(player)}`;
+    const details = `${player.name}${player.isViewer ? ", you" : ""}${seat?.isHost ? ", host" : ""}. ${presenceText}${active ? ". Current turn" : ""}. ${player.handCount} cards. ${playerStatusText(player)}`;
     article.tabIndex = 0;
     article.setAttribute("aria-label", details);
     article.innerHTML = `<h3><span class="presence" aria-hidden="true"></span>${escapeHtml(player.name)}</h3>
-      <p class="seat-meta">${seat?.isHost ? "Host · " : ""}${player.score} pts${state.game.roundStarted ? ` · ${player.handCount} cards` : ""}</p>`;
+      <p class="seat-meta">${[seat?.isHost ? "Host" : "", state.game.roundStarted ? `${player.handCount} cards` : ""].filter(Boolean).join(" · ")}</p>`;
     if (!player.isViewer && player.handCount > 0) {
       const backs = document.createElement("div");
       backs.className = "opponent-hand";
@@ -724,7 +737,7 @@ function canReorderHand(playerIndex) {
 
 function canActAfterDraw() {
   const game = state?.game;
-  return Boolean(game?.roundStarted && game.currentPlayerIndex === state.viewerPlayerIndex && game.hasDrawn && !game.hasDiscarded);
+  return Boolean(game?.roundStarted && game.currentPlayerIndex === state.viewerPlayerIndex && game.hasDrawn && !game.hasDiscarded && !game.pendingBuy);
 }
 
 function canPlayMeld() {
@@ -766,7 +779,7 @@ function updateButtons() {
   const isHost = Boolean(state?.isHost);
   const isViewerTurn = game?.currentPlayerIndex === state?.viewerPlayerIndex;
   const roundActive = Boolean(game?.roundStarted && !game.gameFinished);
-  const canDraw = roundActive && isViewerTurn && !game.hasDrawn && !game.hasDiscarded;
+  const canDraw = roundActive && isViewerTurn && !game.hasDrawn && !game.hasDiscarded && !game.pendingBuy;
   const canAct = canActAfterDraw();
 
   els.createRoomBtn.disabled = socket?.readyState !== WebSocket.OPEN;
@@ -789,12 +802,32 @@ function updateButtons() {
   els.resetBtn.disabled = !inRoom || !isHost;
   els.roundSelect.disabled = !inRoom || !isHost || game?.roundStarted;
   if (socket?.readyState !== WebSocket.OPEN) {
-    for (const button of [els.startRoundBtn, els.drawBtn, els.pickDiscardBtn, els.buyBtn, els.comeDownBtn, els.discardBtn, els.jumpRoundBtn, els.resetBtn]) button.disabled = true;
+    for (const button of [els.startRoundBtn, els.drawBtn, els.pickDiscardBtn, els.buyBtn, els.comeDownBtn, els.discardBtn, els.jumpRoundBtn, els.resetBtn, els.passBuyBtn, els.takeBuyBtn, els.cancelBuyBtn]) button.disabled = true;
   }
   els.drawPileBtn.disabled = els.drawBtn.disabled;
   els.discardPileBtn.disabled = els.pickDiscardBtn.disabled;
   els.discardPileBtn.setAttribute("aria-label", game?.discardTop
     ? `Pick up ${cardTitle(game.discardTop)} from the discard pile` : "Discard pile is empty");
+}
+
+function renderBuyRequest() {
+  const request = state?.game?.pendingBuy;
+  els.buyRequestPanel.classList.toggle("hidden", !request);
+  document.querySelector(".controls").classList.toggle("hidden", Boolean(request));
+  document.querySelector(".action-feedback").classList.toggle("hidden", Boolean(request));
+  if (!request) return;
+  const players = state.game.players;
+  const buyer = players[request.buyerIndex]?.name ?? "A player";
+  const next = players[request.nextApproverIndex]?.name ?? "a player";
+  els.buyRequestText.textContent = request.canViewerRespond
+    ? `${buyer} wants the discard. You have first refusal.`
+    : `${buyer} wants the discard. Waiting for ${next}.`;
+  els.passBuyBtn.classList.toggle("hidden", !request.canViewerRespond);
+  els.takeBuyBtn.classList.toggle("hidden", !request.canViewerRespond);
+  els.cancelBuyBtn.classList.toggle("hidden", !request.canViewerCancel);
+  els.takeBuyBtn.textContent = state.viewerPlayerIndex === state.game.currentPlayerIndex && !state.game.hasDrawn
+    ? "Take card" : "Buy +1";
+  for (const button of [els.passBuyBtn, els.takeBuyBtn, els.cancelBuyBtn]) button.disabled = socket?.readyState !== WebSocket.OPEN;
 }
 
 function populateRoundSelect() {
@@ -822,7 +855,7 @@ function getOverallWinnerText() {
   const orderedPlayers = [...players].sort((a, b) => a.score - b.score);
   const bestScore = orderedPlayers[0]?.score ?? 0;
   const winners = orderedPlayers.filter(player => player.score === bestScore).map(player => player.name);
-  return `${winners.join(" & ")} (${bestScore} points)`;
+  return winners.join(" & ");
 }
 
 function showMessage(message) {

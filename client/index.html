@@ -23,12 +23,22 @@
         <button id="pointsButton" type="button" class="hidden" aria-haspopup="dialog" aria-controls="pointsDialog">Points</button>
         <button id="settingsButton" type="button" class="hidden" aria-haspopup="dialog" aria-controls="settingsDialog">Settings</button>
         <button id="leaveRoomButton" type="button" class="danger hidden">Leave</button>
+        <button id="fullscreenButton" type="button" hidden aria-label="Enter fullscreen" title="Enter fullscreen">⛶</button>
       </nav>
     </header>
 
     <section class="table-stage" aria-label="Shared card table">
-      <div class="felt" aria-hidden="true"><span>KALOOKI<br><small>GOOD CARDS. GOOD COMPANY.</small></span></div>
-      <section id="players" aria-label="Players around the table"></section>
+      <div class="table-surface">
+        <div class="felt" aria-hidden="true"><span>KALOOKI<br><small>GOOD CARDS. GOOD COMPANY.</small></span></div>
+        <section id="players" aria-label="Players around the table"></section>
+        <section id="tableCenter" class="table-center hidden" aria-label="Shared piles and melds">
+          <div class="piles">
+            <button id="drawPileButton" type="button" class="pile pile-button" aria-label="Draw from the deck" disabled><span class="card back deck-art" aria-hidden="true">♠</span><span>DRAW <strong id="deckCount">0</strong></span></button>
+            <button id="discardPileButton" type="button" class="pile pile-button" aria-label="Pick up the top discard" disabled><span id="discardPile" class="discard-card empty">Empty</span><span>DISCARD</span></button>
+          </div>
+        </section>
+        <section class="meld-zone hidden" aria-label="Played melds"><div id="tableMelds" class="table-melds"></div></section>
+      </div>
       <section id="lobbyPanel" class="lobby-panel" aria-label="Room setup">
         <p class="eyebrow">A seat at the table</p><h2>Deal yourself in.</h2>
         <p>Create a private room or join your friends.</p>
@@ -38,13 +48,6 @@
         </div>
         <div class="lobby-actions"><button id="createRoomButton" type="button" class="primary">Create Room</button><button id="joinRoomButton" type="button">Join Room</button></div>
       </section>
-      <section id="tableCenter" class="table-center hidden" aria-label="Shared piles and melds">
-        <div class="piles">
-          <button id="drawPileButton" type="button" class="pile pile-button" aria-label="Draw from the deck" disabled><span class="card back deck-art" aria-hidden="true">♠</span><span>DRAW <strong id="deckCount">0</strong></span></button>
-          <button id="discardPileButton" type="button" class="pile pile-button" aria-label="Pick up the top discard" disabled><span id="discardPile" class="discard-card empty">Empty</span><span>DISCARD</span></button>
-        </div>
-      </section>
-      <section class="meld-zone hidden" aria-label="Played melds"><div id="tableMelds" class="table-melds"></div></section>
       <section id="roundCelebration" class="round-celebration hidden" role="status" aria-live="polite" aria-atomic="true">
         <div id="winnerConfetti" class="winner-confetti" aria-hidden="true"></div>
         <div class="winner-banner"><span class="winner-icon" aria-hidden="true">🏆</span><div><p id="winnerRound" class="eyebrow"></p><h2 id="roundWinnerName"></h2></div><button id="dismissWinnerButton" type="button" aria-label="Dismiss round winner">✕</button></div>
@@ -52,9 +55,13 @@
     </section>
 
     <section class="hand-dock" aria-label="Your hand and game actions">
-      <div class="hand-toolbar"><strong id="handTitle">Your hand</strong><span id="selectionText"></span><button id="fullscreenButton" type="button" hidden>Enter fullscreen</button></div>
+      <div class="hand-toolbar"><strong id="handTitle">Your hand</strong><span id="selectionText"></span></div>
       <div id="localHand" class="hand" tabindex="0" aria-label="Your cards; scroll horizontally to see more"></div>
       <div class="action-bar">
+        <section id="buyRequestPanel" class="buy-request hidden" aria-label="Discard request">
+          <p id="buyRequestText" role="status" aria-live="polite"></p>
+          <div class="buy-decisions"><button id="passBuyButton" type="button">Pass</button><button id="takeBuyButton" type="button" class="primary">Take card</button><button id="cancelBuyButton" type="button">Cancel</button></div>
+        </section>
         <div class="action-feedback"><p id="statusText" role="status" aria-live="polite">Create or join a room first.</p></div>
         <div class="controls" aria-label="Game controls">
           <button id="startRoundButton" type="button" class="primary">Start Round</button>

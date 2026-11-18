@@ -7,6 +7,7 @@ export class GameState {
     this.playerNames = normalisePlayerNames(playerNames);
     this.players = this.playerNames.map(createPlayer);
     this.nextMeldId = 0;
+    this.nextBuyRequestId = 1;
     this.deck = new Deck();
     this.discardPile = [];
     this.discardOwnerIndices = [];
@@ -20,6 +21,7 @@ export class GameState {
     this.cameDownThisTurn = false;
     this.discardPenaltyApplied = false;
     this.pendingJoker = null;
+    this.pendingBuy = null;
     this.topDiscardBuyable = false;
     this.lastMessage = "Create or join a room to begin.";
     this.winnerIndex = null;
@@ -76,6 +78,7 @@ export class GameState {
     this.cameDownThisTurn = false;
     this.discardPenaltyApplied = false;
     this.pendingJoker = null;
+    this.pendingBuy = null;
     this.topDiscardBuyable = true;
     this.winnerIndex = null;
 
@@ -120,6 +123,7 @@ export class GameState {
     this.cameDownThisTurn = false;
     this.discardPenaltyApplied = false;
     this.pendingJoker = null;
+    this.pendingBuy = null;
     this.topDiscardBuyable = false;
     this.winnerIndex = null;
     this.lastMessage = "New game created. Start the first round when ready.";
@@ -138,6 +142,7 @@ export class GameState {
     this.cameDownThisTurn = false;
     this.discardPenaltyApplied = false;
     this.pendingJoker = null;
+    this.pendingBuy = null;
     this.topDiscardBuyable = false;
     this.winnerIndex = null;
 
@@ -188,10 +193,11 @@ export class GameState {
   }
 
   canDraw() {
-    return this.roundStarted && !this.gameFinished && !this.hasDrawn && !this.hasDiscarded;
+    return this.roundStarted && !this.gameFinished && !this.hasDrawn && !this.hasDiscarded && !this.pendingBuy;
   }
 
   discardCard(index) {
+    if (this.pendingBuy) return false;
     if (!this.roundStarted || !this.hasDrawn || this.hasDiscarded) return false;
     if (this.pendingJoker) {
       this.lastMessage = "Play the reclaimed joker elsewhere on the table before discarding.";
@@ -238,6 +244,7 @@ export class GameState {
   }
 
   layDownMeld(cardIndices) {
+    if (this.pendingBuy) return false;
     if (!this.roundStarted || !this.hasDrawn || this.hasDiscarded) return false;
     if (this.cameDownThisTurn) {
       this.lastMessage = "You came down this turn. Discard to finish your turn.";
@@ -299,6 +306,7 @@ export class GameState {
   }
 
   addCardToMeld(targetPlayerIndex, targetMeldIndex, cardHandIndex) {
+    if (this.pendingBuy) return false;
     if (!this.roundStarted || !this.hasDrawn || this.hasDiscarded) return false;
     if (this.cameDownThisTurn) {
       this.lastMessage = "You came down this turn. Discard to finish your turn.";
@@ -335,6 +343,7 @@ export class GameState {
   }
 
   replaceJoker(targetPlayerIndex, targetMeldIndex, jokerIndex, cardHandIndex) {
+    if (this.pendingBuy) return false;
     if (!this.roundStarted || !this.hasDrawn || this.hasDiscarded || this.cameDownThisTurn) return false;
     const player = this.getCurrP();
     if (!player.hasComeDown) return false;
@@ -393,42 +402,87 @@ export class GameState {
     player.meldIds.push(this.nextMeldId++);
   }
 
-canBuyDiscard(playerIndex) {
-  if (!this.roundStarted || !this.topDiscardBuyable || this.discardPile.length === 0) return false;
-  if (playerIndex === this.currentPlayerIndex) return false;
-  if (!this.players[playerIndex]) return false;
-
-  const topDiscardOwnerIndex = this.discardOwnerIndices.at(-1);
-  return topDiscardOwnerIndex !== playerIndex;
-}
-
-buyDiscardOutOfTurn(playerIndex) {
-  if (!this.canBuyDiscard(playerIndex)) {
-    const topDiscardOwnerIndex = this.discardOwnerIndices.at(-1);
-
-    if (topDiscardOwnerIndex === playerIndex) {
-      this.lastMessage = "You cannot buy your own discard.";
-    } else {
-      this.lastMessage = "That discard cannot be bought right now.";
-    }
-
-    return null;
+  buyPriority(playerIndex) {
+    return (playerIndex - this.currentPlayerIndex + this.players.length) % this.players.length;
   }
 
-  const player = this.players[playerIndex];
+  canBuyDiscard(playerIndex) {
+    if (!Number.isInteger(playerIndex) || !this.players[playerIndex] || !this.roundStarted ||
+        !this.topDiscardBuyable || this.discardPile.length === 0 || this.pendingJoker) return false;
+    if (playerIndex === this.currentPlayerIndex || this.discardOwnerIndices.at(-1) === playerIndex) return false;
+    if (this.deck.size() === 0 && this.discardPile.length <= 1) return false;
+    return !this.pendingBuy || this.buyPriority(playerIndex) < this.buyPriority(this.pendingBuy.buyerIndex);
+  }
 
-  const boughtCard = this.discardPile.pop();
-  this.discardOwnerIndices.pop();
-  player.hand.push(boughtCard);
+  buyDiscardOutOfTurn(playerIndex) {
+    if (!this.canBuyDiscard(playerIndex)) {
+      this.lastMessage = "That discard cannot be bought right now.";
+      return null;
+    }
+    const earlierPasses = this.pendingBuy?.approvedIndices ?? [];
+    const approverIndices = [];
+    for (let offset = 0; offset < this.buyPriority(playerIndex); offset++) {
+      const index = (this.currentPlayerIndex + offset) % this.players.length;
+      if (index === this.currentPlayerIndex && this.hasDrawn) continue;
+      if (index === this.discardOwnerIndices.at(-1)) continue;
+      approverIndices.push(index);
+    }
+    this.pendingBuy = {
+      id: this.nextBuyRequestId++, buyerIndex: playerIndex,
+      card: this.discardPile.at(-1), turnIndex: this.currentPlayerIndex,
+      approverIndices, approvedIndices: earlierPasses.filter(index => approverIndices.includes(index))
+    };
+    if (approverIndices.every(index => this.pendingBuy.approvedIndices.includes(index))) return this.completeBuy(playerIndex);
+    this.lastMessage = `${this.players[playerIndex].name} requested the discard. Players ahead have first refusal.`;
+    return { pending: true };
+  }
 
-  this.refillDeckIfNeeded();
-  const penaltyCard = this.deck.draw();
-  if (penaltyCard) player.hand.push(penaltyCard);
+  respondToBuy(playerIndex, requestId, decision) {
+    const request = this.pendingBuy;
+    if (!request || request.id !== requestId) return false;
+    if (request.card !== this.discardPile.at(-1) || request.turnIndex !== this.currentPlayerIndex) {
+      this.pendingBuy = null;
+      this.lastMessage = "The discard changed. The buy request was cancelled.";
+      return false;
+    }
+    if (decision === "cancel" && playerIndex === request.buyerIndex) {
+      this.pendingBuy = null;
+      this.lastMessage = "Buy request cancelled.";
+      return true;
+    }
+    const nextApprover = request.approverIndices.find(index => !request.approvedIndices.includes(index));
+    if (playerIndex !== nextApprover) return false;
+    if (decision === "take") {
+      if (playerIndex === this.currentPlayerIndex && !this.hasDrawn) {
+        this.pendingBuy = null;
+        return Boolean(this.drawFromDiscard());
+      }
+      return Boolean(this.completeBuy(playerIndex));
+    }
+    if (decision !== "pass") return false;
+    request.approvedIndices.push(playerIndex);
+    if (request.approverIndices.every(index => request.approvedIndices.includes(index))) return Boolean(this.completeBuy(request.buyerIndex));
+    this.lastMessage = `${this.players[playerIndex].name} passed on the discard.`;
+    return true;
+  }
 
-  this.topDiscardBuyable = false;
-  this.lastMessage = `${player.name} bought the discard and took a penalty card.`;
-  return { boughtCard, penaltyCard };
-}
+  completeBuy(playerIndex) {
+    const request = this.pendingBuy;
+    if (!request || request.card !== this.discardPile.at(-1)) return null;
+    this.refillDeckIfNeeded();
+    const penaltyCard = this.deck.draw();
+    this.pendingBuy = null;
+    if (!penaltyCard) {
+      this.lastMessage = "No penalty card is available; the buy was cancelled.";
+      return null;
+    }
+    const boughtCard = this.discardPile.pop();
+    this.discardOwnerIndices.pop();
+    this.players[playerIndex].hand.push(boughtCard, penaltyCard);
+    this.topDiscardBuyable = false;
+    this.lastMessage = `${this.players[playerIndex].name} bought the discard and took one extra card.`;
+    return { boughtCard, penaltyCard };
+  }
 
 reorderHand(playerIndex, fromIndex, toIndex) {
   if (!this.roundStarted || this.betweenRounds || this.gameFinished) return false;
@@ -447,7 +501,7 @@ reorderHand(playerIndex, fromIndex, toIndex) {
 
   nextP({ preserveMessage = false } = {}) {
     if (!this.roundStarted || this.betweenRounds || this.gameFinished) return;
-    if (this.pendingJoker) return;
+    if (this.pendingJoker || this.pendingBuy) return;
 
     this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.players.length;
     this.hasDrawn = false;
@@ -469,7 +523,7 @@ reorderHand(playerIndex, fromIndex, toIndex) {
   }
 
   finishRound(winnerIndex) {
-    if (this.pendingJoker) return;
+    if (this.pendingJoker || this.pendingBuy) return;
     this.winnerIndex = winnerIndex;
     const winnerName = this.players[winnerIndex]?.name ?? "Unknown";
 
@@ -488,6 +542,7 @@ reorderHand(playerIndex, fromIndex, toIndex) {
     this.cameDownThisTurn = false;
     this.discardPenaltyApplied = false;
     this.pendingJoker = null;
+    this.pendingBuy = null;
     this.topDiscardBuyable = false;
     this.currentRound += 1;
 
